@@ -3,90 +3,127 @@ import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
+import type { DeliveryRecord } from '../src/delivery.ts';
 import {
+  claimsForRun,
   loadDeliveryRecord,
   markDelivered,
   parseDeliveryRecord,
-  pendingKinds,
+  prepareClaims,
   saveDeliveryRecord,
 } from '../src/delivery.ts';
 
 const ALL = ['fridays', 'saturdays', 'holidays'] as const;
 const tempPath = (name: string) => join(mkdtempSync(join(tmpdir(), 'ttpoll-')), name);
 
-test('parseDeliveryRecord accepts a well-formed record', () => {
-  const record = parseDeliveryRecord({ '2026-09': ['fridays', 'saturdays'] });
-  assert.deepEqual(record, { '2026-09': ['fridays', 'saturdays'] });
+// AC1 (R1, R2): committed state contains only aliases and independently tracks
+// every destination/kind claim or delivery.
+test('parseDeliveryRecord retains per-alias delivery statuses without chat ids', () => {
+  const persisted = {
+    '2026-11': {
+      test: {
+        fridays: { status: 'delivered', claimId: 'run-1' },
+        saturdays: { status: 'claimed', claimId: 'run-1' },
+      },
+      club: { fridays: { status: 'claimed', claimId: 'run-1' } },
+    },
+  } as const;
+  const record = parseDeliveryRecord(persisted);
+  assert.deepEqual(record, persisted);
+  assert.doesNotMatch(JSON.stringify(record), /-100\d{6,}/);
 });
 
-// A malformed record must not be read as "nothing delivered yet" — that would
-// re-post an entire month to a live group.
-test('parseDeliveryRecord rejects malformed input rather than assuming empty', () => {
+test('parseDeliveryRecord rejects malformed state and chat ids masquerading as aliases', () => {
   assert.throws(() => parseDeliveryRecord([1, 2, 3]), /record/i);
-  assert.throws(() => parseDeliveryRecord({ '2026-09': 'fridays' }), /array/i);
-  assert.throws(() => parseDeliveryRecord({ '2026-09': ['sundays'] }), /sundays/i);
-  assert.throws(() => parseDeliveryRecord({ 'Sept 2026': ['fridays'] }), /YYYY-MM/i);
+  assert.throws(() => parseDeliveryRecord({ '2026-09': ['fridays'] }), /destination/i);
+  assert.throws(() => parseDeliveryRecord({ '2026-09': { '-1001234567890': {} } }), /safe alias/i);
+  assert.throws(
+    () =>
+      parseDeliveryRecord({
+        '2026-09': { test: { sundays: { status: 'claimed', claimId: 'r' } } },
+      }),
+    /sundays/i,
+  );
+  assert.throws(
+    () =>
+      parseDeliveryRecord({
+        '2026-09': { test: { fridays: { status: 'claimed', claimId: 'bad claim' } } },
+      }),
+    /claim id/i,
+  );
 });
 
-test('loadDeliveryRecord treats a missing file as empty', () => {
-  assert.deepEqual(loadDeliveryRecord(tempPath('absent.json')), {});
-});
-
-test('saveDeliveryRecord then loadDeliveryRecord round-trips', () => {
+test('saveDeliveryRecord then loadDeliveryRecord round-trips per-alias state', () => {
   const path = tempPath('delivered.json');
-  saveDeliveryRecord({ '2026-09': ['fridays'] }, path);
-  assert.deepEqual(loadDeliveryRecord(path), { '2026-09': ['fridays'] });
-  assert.match(readFileSync(path, 'utf8'), /2026-09/);
+  const record: DeliveryRecord = {
+    '2026-09': { test: { fridays: { status: 'delivered', claimId: 'run-1' } } },
+  };
+  saveDeliveryRecord(record, path);
+  assert.deepEqual(loadDeliveryRecord(path), record);
+  assert.doesNotMatch(readFileSync(path, 'utf8'), /-100\d{6,}/);
 });
 
-test('loadDeliveryRecord throws on a corrupt file', () => {
+test('loadDeliveryRecord treats a missing file as empty and rejects a corrupt one', () => {
+  assert.deepEqual(loadDeliveryRecord(tempPath('absent.json')), {});
   const path = tempPath('corrupt.json');
   writeFileSync(path, '{ not json');
   assert.throws(() => loadDeliveryRecord(path));
 });
 
-// AC20 (R19): everything already delivered means nothing to send.
-test('pendingKinds returns nothing when all requested kinds are recorded', () => {
-  const record = { '2026-09': [...ALL] };
-  assert.deepEqual(pendingKinds(record, '2026-09', ALL), []);
+test('prepareClaims creates independently owned claims and preserves delivered work', () => {
+  const prepared = prepareClaims({}, '2026-11', ['test', 'club'], ALL, 'run-1', false);
+  assert.equal(prepared.claimed.length, 6);
+  const delivered = markDelivered(prepared.record, '2026-11', 'test', 'fridays', 'run-1');
+  const second = prepareClaims(delivered, '2026-11', ['test', 'club'], ALL, 'run-2', false);
+  assert.equal(second.record['2026-11']?.test?.fridays?.status, 'delivered');
+  assert.equal(second.blocked.length, 5);
 });
 
-// AC21 (R20): a partially failed run resends only what is missing.
-test('pendingKinds returns only the kinds not yet delivered', () => {
-  assert.deepEqual(pendingKinds({ '2026-09': ['fridays', 'saturdays'] }, '2026-09', ALL), [
-    'holidays',
-  ]);
+test('a blocked prepare leaves every sibling claim unchanged', () => {
+  const initial = prepareClaims({}, '2026-11', ['test'], ['fridays'], 'run-1', false).record;
+  const attempted = prepareClaims(
+    initial,
+    '2026-11',
+    ['test', 'club'],
+    ['fridays'],
+    'run-2',
+    false,
+  );
+  assert.deepEqual(attempted.blocked, [{ alias: 'test', kind: 'fridays' }]);
+  assert.deepEqual(attempted.claimed, []);
+  assert.deepEqual(attempted.record, initial);
 });
 
-test('pendingKinds returns everything for an unseen month', () => {
-  assert.deepEqual(pendingKinds({}, '2026-10', ALL), [...ALL]);
-});
-
-// AC23 (R22): the scope selector narrows what counts as requested.
-test('pendingKinds respects a narrowed request', () => {
-  assert.deepEqual(pendingKinds({}, '2026-10', ['holidays']), ['holidays']);
-  assert.deepEqual(pendingKinds({ '2026-10': ['holidays'] }, '2026-10', ['holidays']), []);
-});
-
-// AC18/AC19 (R23): recorded per kind, and only on success.
-test('markDelivered adds one kind without disturbing others', () => {
-  let record = markDelivered({}, '2026-09', 'fridays');
-  record = markDelivered(record, '2026-09', 'saturdays');
-  record = markDelivered(record, '2026-10', 'fridays');
-  assert.deepEqual(record, {
-    '2026-09': ['fridays', 'saturdays'],
-    '2026-10': ['fridays'],
+test('force explicitly reclaims delivered work during preparation', () => {
+  const claimed = prepareClaims({}, '2026-11', ['test'], ['fridays'], 'run-1', false).record;
+  const delivered = markDelivered(claimed, '2026-11', 'test', 'fridays', 'run-1');
+  const forced = prepareClaims(delivered, '2026-11', ['test'], ['fridays'], 'run-2', true);
+  assert.deepEqual(forced.claimed, [{ alias: 'test', kind: 'fridays' }]);
+  assert.deepEqual(forced.record['2026-11']?.test?.fridays, {
+    status: 'claimed',
+    claimId: 'run-2',
   });
 });
 
-test('markDelivered is idempotent', () => {
-  const once = markDelivered({}, '2026-09', 'fridays');
-  assert.deepEqual(markDelivered(once, '2026-09', 'fridays'), { '2026-09': ['fridays'] });
+// AC3 (R4): an added alias has no historic state and remains eligible even
+// when existing aliases already delivered the whole month.
+test('prepareClaims leaves a newly configured alias eligible', () => {
+  let record = prepareClaims({}, '2026-11', ['test'], ALL, 'run-1', false).record;
+  for (const kind of ALL) record = markDelivered(record, '2026-11', 'test', kind, 'run-1');
+  const prepared = prepareClaims(record, '2026-11', ['test', 'club'], ALL, 'run-2', false);
+  assert.deepEqual(
+    prepared.claimed,
+    ALL.map((kind) => ({ alias: 'club', kind })),
+  );
 });
 
-test('markDelivered does not mutate its input', () => {
-  const original = { '2026-09': ['fridays'] as const };
-  const input = { '2026-09': [...original['2026-09']] };
-  markDelivered(input, '2026-09', 'holidays');
-  assert.deepEqual(input, { '2026-09': ['fridays'] });
+test('claimsForRun permits only the owning run and markDelivered is idempotent', () => {
+  const prepared = prepareClaims({}, '2026-11', ['test'], ['fridays'], 'run-1', false).record;
+  assert.deepEqual(claimsForRun(prepared, '2026-11', ['test'], ['fridays'], 'run-2'), {
+    sendable: [],
+    blocked: [{ alias: 'test', kind: 'fridays' }],
+    missing: [],
+  });
+  const delivered = markDelivered(prepared, '2026-11', 'test', 'fridays', 'run-1');
+  assert.deepEqual(markDelivered(delivered, '2026-11', 'test', 'fridays', 'run-1'), delivered);
 });

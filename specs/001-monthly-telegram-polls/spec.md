@@ -1,7 +1,7 @@
 ---
 id: 001-monthly-telegram-polls
 title: Monthly Telegram availability polls
-status: ready
+status: done
 created: 2026-08-01
 updated: 2026-08-01
 parent: null
@@ -24,11 +24,11 @@ that members can respond before the month begins.
 - **Run date** — the `Asia/Singapore` date on which the job executes. The run
   date always falls in the month *before* the target month for scheduled runs.
 - **Gazetted date** — the official public holiday date published by MOM.
-- **Observed date** — the substitute day off when a gazetted holiday falls on a
-  Sunday (in Singapore, the following Monday).
+- **Observed date** — a substitute day off published explicitly in the MOM
+  dataset. It is not derived and is not always the following Monday.
 - **Destination** — a configured Telegram group that receives the polls.
-- **Posted-months record** — durable state listing target months already
-  delivered, used to prevent duplicate posting.
+- **Delivery record** — durable per-month, per-destination-alias, per-kind state
+  containing pre-send claims and delivered outcomes.
 
 ## Goals
 
@@ -137,24 +137,23 @@ that members can respond before the month begins.
 
 ### Idempotency and re-runs
 
-- R18. The system SHALL maintain a durable delivery record, persisted outside
-  the lifetime of a single run, mapping each target month to the set of poll
-  kinds (`fridays`, `saturdays`, `holidays`) already delivered to every
-  destination for that month.
-- R19. WHEN every poll kind requested by a run is already recorded for the
-  target month, the system SHALL send nothing, SHALL report the skip, and SHALL
-  exit zero.
-- R20. WHEN some but not all requested poll kinds are recorded for the target
-  month, the system SHALL send only the unrecorded kinds, so that recovering
-  from a partially failed run cannot duplicate an already-delivered poll.
-- R21. WHEN a run is invoked with an explicit force flag, the system SHALL send
-  every requested poll kind regardless of the delivery record.
+- R18. The system SHALL maintain a durable delivery record mapping target month,
+  destination alias, and poll kind to a claimed or delivered status and claim
+  identifier.
+- R19. WHEN every selected destination/kind is delivered, the system SHALL send
+  nothing, SHALL report the skip, and SHALL exit zero.
+- R20. A live run SHALL send only selected destination/kinds durably claimed by
+  that run's claim identifier. A claim owned by another run SHALL stop automatic
+  delivery for operator review.
+- R21. WHEN prepare mode is invoked with an explicit force flag and narrowed
+  destination/kind scope, the system SHALL replace state only for that scope so
+  a verified-missing item can be retried without duplicating another group.
 - R22. WHEN a run is invoked with a scope selector naming a subset of
   `fridays`, `saturdays`, `holidays`, the system SHALL treat only the named
   kinds as requested.
-- R23. WHEN a poll kind has been delivered successfully to every destination,
-  the system SHALL add that kind to the target month's delivery record;
-  otherwise it SHALL leave that kind unrecorded.
+- R23. BEFORE live delivery the workflow SHALL push claims, and after each
+  successful Telegram response the system SHALL atomically mark that exact
+  destination/kind delivered. Ambiguous outcomes SHALL remain claimed.
 
 ### Failure handling
 
@@ -163,12 +162,12 @@ that members can respond before the month begins.
 - R25. WHEN a Telegram request returns HTTP 429, the system SHALL wait at least
   the `retry_after` seconds supplied by Telegram and retry that request, up to
   3 attempts.
-- R26. WHEN a Telegram request fails with a 5xx status or a connection error
-  before any response is received, the system SHALL retry that request up to 3
-  attempts with exponential backoff.
-- R27. WHEN a Telegram request times out after the request was transmitted, the
-  system SHALL NOT retry it, and SHALL report the ambiguous outcome, because a
-  retry could duplicate a delivered poll.
+- R26. WHEN a Telegram request returns 5xx or Fetch throws before returning a
+  response, the system SHALL treat the result as ambiguous and SHALL NOT retry,
+  because Fetch cannot prove the request did not reach Telegram.
+- R27. WHEN any Telegram outcome is ambiguous, the system SHALL retain its
+  durable claim, report operator recovery is required, and SHALL NOT
+  automatically resend it.
 - R28. WHEN Telegram reports that a destination has migrated to a supergroup,
   the system SHALL report the superseding chat identifier and instruct the
   operator to update configuration, and SHALL exit non-zero.
@@ -235,10 +234,10 @@ that members can respond before the month begins.
 - 2026-08-01 Q8 -> closed as foreclosed by Q1. Selecting a scheduled,
   short-lived job means no process exists to receive Telegram updates, so
   outbound-only is the only coherent design in v1.
-- 2026-08-01 Q9 -> transport-level retries (429 and pre-response failures) are
-  required; run-level duplicate protection is provided by the posted-months
-  record plus explicit month, scope, and force inputs (owner; rationale:
-  separates retries that provably did not deliver from re-runs that might).
+- 2026-08-01 Q9 -> corrected by spec 002 after implementation review. Only 429
+  is provably safe to retry; 5xx and generic Fetch failures are ambiguous.
+  Duplicate protection uses durable pre-send claims plus explicit month,
+  destination, kind, and force scope.
 - 2026-08-01 Holiday-source failure SHALL degrade rather than block: a live
   fetch failure falls back to a committed snapshot, and total coverage failure
   still delivers the Friday and Saturday polls (owner; rationale: Friday and
@@ -272,6 +271,9 @@ that members can respond before the month begins.
   A third configured slot would exceed the maximum in any 5-Saturday month.
   R41 makes that condition a loud pre-send failure rather than silent
   truncation.
+- 2026-08-01 Spec 002 supersedes the original global per-kind delivery record
+  with alias/kind claims and delivered statuses. This resolves the contradiction
+  between multi-destination partial success and duplicate-free recovery.
 
 ## Acceptance criteria
 
@@ -321,21 +323,21 @@ that members can respond before the month begins.
 - [ ] AC17 (R17): Given a committed snapshot whose latest covered month is
   three months after the check date, when the staleness check runs, then it
   exits non-zero.
-- [ ] AC18 (R18, R23): Given a run that delivers all three polls to every
-  destination, when it completes, then the delivery record lists `fridays`,
-  `saturdays` and `holidays` for the target month.
-- [ ] AC19 (R23): Given a run in which the holiday poll fails for one
-  destination while the Friday and Saturday polls succeed everywhere, when it
-  completes, then the delivery record lists `fridays` and `saturdays` but not
-  `holidays`.
-- [ ] AC20 (R19): Given a delivery record listing all three kinds for the
-  target month and no force flag, when a run executes, then no Telegram request
-  is issued and the process exits zero.
-- [ ] AC21 (R20): Given a delivery record listing only `fridays` and
-  `saturdays` for the target month, when a full run executes, then only the
-  holiday poll is sent.
-- [ ] AC22 (R21): Given a delivery record listing all three kinds and an
-  explicit force flag, when a run executes, then all three polls are sent.
+- [ ] AC18 (R18, R23): Given aliases `test` and `club`, when all three kinds are
+  prepared and delivered, state records each alias/kind independently and
+  contains neither Telegram chat ID.
+- [ ] AC19 (R23): Given `test/fridays` succeeds and `club/fridays` fails, when
+  the run ends, local state marks only `test/fridays` delivered while the
+  durable claim prevents either item being guessed safe on an automatic retry.
+- [ ] AC20 (R19): Given every selected alias/kind is delivered, when prepare
+  and live execute without force, then no Telegram request is issued and the
+  process exits zero.
+- [ ] AC21 (R20): Given a claim owned by another run, when prepare or live is
+  attempted automatically, then no Telegram request is issued and the process
+  exits non-zero for operator review.
+- [ ] AC22 (R21): Given the operator verified `club/fridays` did not land, when
+  prepare is invoked with `--to club --only fridays --force`, then only that
+  destination/kind is reclaimed and delivered.
 - [ ] AC23 (R22): Given a scope selector naming only `holidays`, when a run
   executes, then only the holiday poll is sent.
 - [ ] AC24 (R24): Given a missing bot token or an empty destination allow-list,
@@ -343,12 +345,12 @@ that members can respond before the month begins.
 - [ ] AC25 (R25): Given a mocked Telegram responding 429 with `retry_after` 2
   then 200, when a poll is sent, then the client waits at least 2 seconds,
   retries, and reports success.
-- [ ] AC26 (R26): Given a mocked Telegram responding 500 twice then 200, when a
-  poll is sent, then the client retries with increasing delay and reports
-  success.
+- [ ] AC26 (R26): Given a mocked Telegram returning 500 or throwing a generic
+  Fetch error, when a poll is sent, then exactly one request is issued and the
+  outcome is reported as ambiguous.
 - [ ] AC27 (R27): Given a mocked Telegram that times out after transmission,
-  when a poll is sent, then no retry is issued and the run reports the
-  ambiguous outcome.
+  when a poll is sent, then no retry is issued, the claim remains unresolved,
+  and a later automatic run sends nothing.
 - [ ] AC28 (R28): Given a mocked Telegram returning a supergroup migration
   error carrying a new chat identifier, when a run executes, then the reported
   output contains the new identifier and the process exits non-zero.

@@ -65,10 +65,11 @@ typechecker only and is configured `noEmit`; it must never produce output.
   is the whole requirement.
 - **Holiday data is a multi-step flow**, not a plain GET: data.gov.sg
   `initiate-download` → poll `poll-download` until a signed CSV URL appears →
-  download the CSV. Roughly 5 requests/minute unauthenticated. Both endpoints
-  answer **201**, so check `response.ok`, never `status === 200`. A committed
-  snapshot (`data/holidays.json`) is the fallback; the live source must never be
-  able to block the Friday and Saturday polls.
+  download the CSV. Unauthenticated Dataset Downloads calls are limited to 2
+  per 10 seconds, so space API calls by at least 5 seconds and bound every
+  request with a timeout. Both endpoints answer **201**, so check `response.ok`,
+  never `status === 200`. A committed snapshot (`data/holidays.json`) is the
+  fallback; the live source must never block the Friday and Saturday polls.
 - **Observed holidays come from the dataset, never derived.** MOM marks them
   `(Observed)` and the substitute is not always the following Monday — in 2022
   Labour Day's substitute was a Tuesday because the Monday was already Hari
@@ -76,10 +77,9 @@ typechecker only and is configured `noEmit`; it must never produce output.
 - **`covered: false` is not the same as zero holidays.** An uncovered year
   degrades and exits non-zero (R15); a covered month that simply has no
   holidays gets the informational message and exits zero (R16).
-- **Retry taxonomy matters.** Retry HTTP 429 (honour `retry_after`) and
-  pre-response 5xx/connection failures — those provably did not deliver. Never
-  retry a timeout that occurred *after* transmission; it may have delivered,
-  and a retry would duplicate a poll in a live group.
+- **Retry taxonomy matters.** Retry only HTTP 429 and honour `retry_after`.
+  Treat 5xx, timeouts, and generic Fetch failures as ambiguous and do not retry:
+  Fetch cannot prove the request did not reach Telegram.
 
 ## Security
 
@@ -114,10 +114,11 @@ typechecker only and is configured `noEmit`; it must never produce output.
 - **Never post to a live group from a test or a local run.** `npm run preview`
   renders payloads without contacting Telegram; manual workflow dispatch
   defaults `preview` to true for the same reason.
-- Delivery state lives in `state/delivered.json`, keyed by target month and
-  valued by the poll kinds already delivered. It is tracked per *kind* so that
-  recovering from a partially failed run cannot duplicate a poll that already
-  landed. Never reduce it to a flat list of months.
+- Delivery state lives in `state/delivered.json`, keyed by target month,
+  destination alias, and poll kind. Each entry is `claimed` or `delivered` with
+  a workflow claim ID. A live run may send only its durably pushed claims.
+  Stale claims require inspection and destination/kind-scoped recovery; never
+  reduce state to a month/kind list or auto-retry an ambiguous claim.
 - Prefer pure functions with no I/O for calendar and poll-building logic; keep
   `fetch` confined to the holiday source and the Telegram client so the rest
   stays trivially testable.

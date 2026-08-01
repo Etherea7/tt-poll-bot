@@ -191,3 +191,10 @@ a real problem.
 - next action: `wf-feature` against `specs/001-monthly-telegram-polls/`,
   resuming at step 2 of its implementation sequence (clock and target-month
   derivation). Step 3, Friday derivation, is already satisfied.
+
+## Repository reconciliation — 2026-08-01
+
+- The bootstrap and feature work are now merged on `main` at `11e14e3`; the
+  protected-branch handback above is retained as historical evidence and is no
+  longer the current repository state.
+- Deployment hardening continues in `002-deployment-safety`.

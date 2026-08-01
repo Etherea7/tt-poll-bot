@@ -1,7 +1,7 @@
 ---
 work: 001-monthly-telegram-polls
 workflow: feature
-status: in-progress
+status: done
 updated: 2026-08-01
 links: { spec: spec.md, plan: plan.md, tasks: tasks.md }
 ---
@@ -380,3 +380,19 @@ holiday source. Deferred work is listed explicitly in `tasks.md`.
   `tasks.md`. Nothing can post to Telegram yet; a non-preview run exits 2.
 - next action: T5 and T6 — the data.gov.sg holiday source, committed snapshot
   fallback, and the CI staleness check (R6, R14, R15, R17)
+
+## Post-merge reconciliation — 2026-08-01
+
+- T1-T10 are implemented on `main` at `11e14e3`; the earlier increment handback
+  above is retained as history and is no longer the current project status.
+- Full baseline verification after merge: tests 87/87, lint, typecheck,
+  snapshot freshness, and offline/live-source preview all passed.
+- Deployment review opened child work item `002-deployment-safety` to correct
+  multi-destination state, ambiguous retries, holiday degradation, strict CLI
+  parsing, and workflow persistence before the first test-group live run.
+- Current corrections supersede historical implementation notes above: the
+  Dataset Downloads quota is 2 calls per 10 seconds; configuration uses
+  `TELEGRAM_DESTINATIONS=alias=chatId`; only HTTP 429 is retried; 5xx and
+  generic Fetch failures remain durably claimed for operator review.
+- Current status: implementation complete; deployment is gated only by spec 002
+  verification and its protected-main merge decision.
