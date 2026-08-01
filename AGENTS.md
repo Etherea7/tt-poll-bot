@@ -19,6 +19,8 @@ The behavioural source of truth is
 - Build/package: `N/A: Node executes .ts directly via stable type stripping, so no compile, bundle, or emit step exists`
 - Run locally: `npm run preview`
 - Readiness probe: `N/A: batch CLI that runs to completion and exits, so no process stays alive to probe`
+- Snapshot staleness check: `npm run snapshot:check`
+- Regenerate the holiday snapshot: `npm run snapshot:refresh`
 
 `npm test` defines green and runs the built-in `node --test`. `tsc` is a
 typechecker only and is configured `noEmit`; it must never produce output.
@@ -61,11 +63,19 @@ typechecker only and is configured `noEmit`; it must never produce output.
   integer calendar arithmetic carrying no time-zone meaning. Do not reach for a
   date library; `Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Singapore' })`
   is the whole requirement.
-- **Holiday data is a two-step flow**, not a plain GET: data.gov.sg
-  `initiate-download` → poll `poll-download` until a signed CSV URL appears.
-  Roughly 5 requests/minute unauthenticated. A committed snapshot is the
-  fallback; the live source must never be able to block the Friday and Saturday
-  polls.
+- **Holiday data is a multi-step flow**, not a plain GET: data.gov.sg
+  `initiate-download` → poll `poll-download` until a signed CSV URL appears →
+  download the CSV. Roughly 5 requests/minute unauthenticated. Both endpoints
+  answer **201**, so check `response.ok`, never `status === 200`. A committed
+  snapshot (`data/holidays.json`) is the fallback; the live source must never be
+  able to block the Friday and Saturday polls.
+- **Observed holidays come from the dataset, never derived.** MOM marks them
+  `(Observed)` and the substitute is not always the following Monday — in 2022
+  Labour Day's substitute was a Tuesday because the Monday was already Hari
+  Raya Puasa. Never reimplement this rule; `test/holidays.test.ts` guards it.
+- **`covered: false` is not the same as zero holidays.** An uncovered year
+  degrades and exits non-zero (R15); a covered month that simply has no
+  holidays gets the informational message and exits zero (R16).
 - **Retry taxonomy matters.** Retry HTTP 429 (honour `retry_after`) and
   pre-response 5xx/connection failures — those provably did not deliver. Never
   retry a timeout that occurred *after* transmission; it may have delivered,

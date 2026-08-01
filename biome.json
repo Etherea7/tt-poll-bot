@@ -6,7 +6,7 @@
     "useIgnoreFile": true
   },
   "files": {
-    "includes": ["**", "!**/node_modules", "!**/.worktrees", "!**/.claude"]
+    "includes": ["**", "!**/node_modules", "!**/.worktrees", "!.claude"]
   },
   "formatter": {
     "enabled": true,

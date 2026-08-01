@@ -10,11 +10,12 @@ npm run preview                       # target month derived from today in Singa
 node src/main.ts --preview --month 2026-09
 ```
 
-Because holiday sourcing is not built yet, supply holiday dates by hand to
-preview the holiday poll and the de-duplication rule:
+Holidays come from the live data.gov.sg dataset, falling back to the committed
+snapshot. Two flags override that:
 
 ```bash
-node src/main.ts --preview --month 2026-09 --holidays 2026-09-15,2026-09-26
+node src/main.ts --preview --month 2026-09 --holidays 2026-09-15   # supply dates by hand
+node src/main.ts --preview --month 2026-11 --offline               # force the snapshot path
 ```
 
 Override the Saturday time slots:
@@ -65,8 +66,46 @@ from the poll. If more slots are needed, the poll must be split — most simply,
 one poll per time slot with dates as options, which makes growth additive
 instead of multiplicative.
 
+## Public holidays
+
+Source of truth is the MOM consolidated dataset on data.gov.sg. Fetching it is
+a three-step flow — `initiate-download`, then poll `poll-download` until a
+signed URL appears, then download the CSV — rate-limited to about 5 requests a
+minute unauthenticated.
+
+`data/holidays.json` is a committed snapshot used whenever the live source
+fails, returns a non-2xx status, exceeds the poll budget, or fails schema
+validation. **The live source can never withhold the Friday and Saturday
+polls**: if neither source covers the target year, those two polls still go out
+and the run exits non-zero with the holiday poll skipped.
+
+**Observed days are taken from the dataset, never derived.** The dataset marks
+them explicitly, e.g. `2026-11-09, Deepavali (Observed)`. Do not reimplement a
+"Sunday → following Monday" rule: in 2022 Labour Day fell on Sunday 1 May,
+Monday 2 May was already Hari Raya Puasa, and MOM gazetted the substitute for
+**Tuesday 3 May**. `test/holidays.test.ts` guards this.
+
+### Keeping the snapshot fresh
+
+```bash
+npm run snapshot:check      # fails if it does not reach 6 months ahead
+npm run snapshot:refresh    # regenerate from live, then review the diff and commit
+```
+
+The check runs in CI so staleness surfaces during ordinary development rather
+than during a scheduled run that has already lost its live source. MOM publishes
+the next year around Q3.
+
 ## Not built yet
 
-Holiday sourcing from data.gov.sg, the snapshot fallback, the Telegram client,
-the delivery record that prevents duplicate posts, and the scheduled GitHub
-Actions workflow. See `specs/001-monthly-telegram-polls/tasks.md`.
+The Telegram client, the delivery record that prevents duplicate posts, the run
+coordinator, and the scheduled GitHub Actions workflow. See
+`specs/001-monthly-telegram-polls/tasks.md`.
+
+## Exit codes
+
+| Code | Meaning |
+|---|---|
+| 0 | Preview rendered; holidays resolved (or the month genuinely has none) |
+| 1 | No holiday coverage from either source, or a build/validation failure |
+| 2 | Non-preview invocation — sending is not implemented |

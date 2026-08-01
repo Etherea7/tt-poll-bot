@@ -12,7 +12,9 @@
     "lint": "biome check .",
     "format": "biome format --write .",
     "typecheck": "tsc --noEmit",
-    "preview": "node src/main.ts --preview"
+    "preview": "node src/main.ts --preview",
+    "snapshot:check": "node scripts/check-snapshot.ts",
+    "snapshot:refresh": "node scripts/refresh-snapshot.ts"
   },
   "devDependencies": {
     "typescript": "^7.0.2",
