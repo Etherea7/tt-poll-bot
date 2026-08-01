@@ -1,0 +1,18 @@
+{
+  "2026-08": {
+    "test": {
+      "fridays": {
+        "status": "claimed",
+        "claimId": "30713284575-1"
+      },
+      "saturdays": {
+        "status": "claimed",
+        "claimId": "30713284575-1"
+      },
+      "holidays": {
+        "status": "claimed",
+        "claimId": "30713284575-1"
+      }
+    }
+  }
+}
