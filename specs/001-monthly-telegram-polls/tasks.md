@@ -5,15 +5,19 @@ observed before any implementation. Requirement IDs refer to `spec.md`.
 
 ## This increment — pure domain logic, no I/O
 
-- [ ] T1. Target-month resolution in `Asia/Singapore` (R1, R2, R3).
-  Test: `test/clock.test.ts` — AC1, AC2, AC3.
-- [ ] T2. Saturday derivation (R5). Test: `test/calendar.test.ts` — AC5.
-- [ ] T3. Date and slot option rendering (R37, R38).
-  Test: `test/format.test.ts` — AC35, AC36.
-- [ ] T4. Poll builder: questions, de-duplication, ordering, option and length
+- [x] T1. Target-month resolution in `Asia/Singapore` (R1, R2, R3).
+  Test: `test/clock.test.ts` — AC1, AC2, AC3. Red observed
+  2026-08-01T11:26:40Z, green 11:27:33Z.
+- [x] T2. Saturday derivation (R5). Test: `test/calendar.test.ts` — AC5.
+  Red observed 2026-08-01T11:26:40Z, green 11:27:33Z.
+- [x] T3. Date and slot option rendering (R37, R38).
+  Test: `test/format.test.ts` — AC35, AC36. Red observed
+  2026-08-01T11:28:53Z, green 11:29:58Z.
+- [x] T4. Poll builder: questions, de-duplication, ordering, option and length
   limits, `allow_adding_options`, empty-holiday message, overflow guard
   (R7, R8, R9, R10, R16, R34, R35, R36, R39, R40, R41).
   Test: `test/polls.test.ts` — AC7, AC8, AC9, AC10, AC16, AC34, AC37, AC38, AC39.
+  Red observed 2026-08-01T11:28:53Z, green 11:29:58Z.
 
 ## Deferred to later increments
 

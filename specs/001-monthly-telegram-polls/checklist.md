@@ -194,21 +194,52 @@ holiday source. Deferred work is listed explicitly in `tasks.md`.
 
 ## Gates
 
-- [ ] T1 red observed, then green: target-month resolution (AC1, AC2, AC3)
-- [ ] T2 red observed, then green: Saturday derivation (AC5)
-- [ ] T3 red observed, then green: option rendering (AC35, AC36)
-- [ ] T4 red observed, then green: poll builder (AC7-AC10, AC16, AC34, AC37-AC39)
-- [ ] Full regression suite green
-- [ ] Lint and typecheck green
-- [ ] Docs updated
-- [ ] Secrets scan and feature commit verified
+- [x] T1 red observed, then green: target-month resolution (AC1, AC2, AC3).
+  Red 2026-08-01T11:26:40Z — 9 failures, all `Error: not implemented`.
+  Green 11:27:33Z — 12/12.
+- [x] T2 red observed, then green: Saturday derivation (AC5). Same red/green
+  runs as T1.
+- [x] T3 red observed, then green: option rendering (AC35, AC36).
+  Red 2026-08-01T11:28:53Z — 14 failures, 13 `Error: not implemented` plus the
+  overflow test correctly rejecting the stub's error. Green 11:29:58Z.
+- [x] T4 red observed, then green: poll builder (AC7-AC10, AC16, AC34, AC37-AC39).
+  Same red/green runs as T3.
+- [x] Full regression suite green — `npm test` exit 0, tests 26 / pass 26 /
+  fail 0, observed 2026-08-01T11:29:58Z and again after formatting.
+- [x] Lint and typecheck green — `npm run lint` exit 0 ("Checked 12 files, no
+  fixes applied"); `npm run typecheck` exit 0. Lint reached green on attempt 2;
+  see Feature loop log.
+- [x] Preview verified — `node src/main.ts --preview --month 2026-09 --holidays
+  2026-09-15` exit 0, rendering all three polls with the agreed questions and
+  option formats. The R41 guard was exercised live: five Saturdays with three
+  slots exited 1 with "needs 15 options, exceeding the Telegram maximum of 12".
+- [x] Docs updated — `docs/USAGE.md` covers preview invocation, what gets
+  posted, the slot ceiling and its arithmetic, and what is not built yet.
+- [x] Secrets scan and feature commit verified — `secrets-check: clean`;
+  commit `1eeae2d`, 13 files changed, 771 insertions, verified with
+  `git log -1 --stat`.
 - [ ] Merge gate: explicit owner confirmation for the protected destination
 
 ## Feature loop log
 
-- No attempts yet.
+- **Attempt 1 — weak oracle caught during red.** `resolveTargetMonth rejects a
+  malformed override` passed against a stub that throws unconditionally,
+  because `assert.throws` with no matcher is satisfied by any error. It would
+  have kept passing with the validation deleted. Strengthened to assert the
+  exact message for three distinct malformed inputs, so it can only pass for
+  the right reason.
+- **Attempt 2 — lint gate.** Prediction: lint would pass after implementation.
+  Observed: exit 1, six formatter-only errors, one per newly written file.
+  Change: `biome check --write`. Result: exit 0; the diff was purely
+  cosmetic line-collapsing, and tests plus typecheck were re-run green
+  afterwards to confirm no assertion changed.
 
 ## Feature handback
 
-- state: in progress
-- next action: resume from the first unchecked gate above
+- state: implementation complete for this increment; awaiting merge decision
+- scope delivered: R1-R3, R5, R7-R10, R16, R34-R41 (pure domain layer)
+- scope explicitly deferred: holiday source, snapshot staleness check, delivery
+  record, Telegram client, coordinator, GitHub Actions workflow — T5-T10 in
+  `tasks.md`
+- next action: owner confirmation to merge `feature/001-monthly-telegram-polls`
+  into protected `main`
