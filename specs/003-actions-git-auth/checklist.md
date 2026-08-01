@@ -1,7 +1,7 @@
 ---
 work: 003-actions-git-auth
 workflow: debug
-status: in-progress
+status: awaiting-human
 updated: 2026-08-02
 links: { spec: null, plan: null, tasks: null }
 ---
@@ -145,10 +145,29 @@ rewrite prior predictions, decisions, or failed results.
 
 - none.
 
+## Protected-destination verification
+
+- destination: clean `main` at
+  `2c06ce844f108f38d77f4e6d9f083188cf5e9772`, equal to `origin/main`.
+- source verified: `debug/003-actions-git-auth` at
+  `355cc5ca8a75d8f75164ef04fe17c210a7fd22e8` (red oracle, fix, and truthful
+  commit records).
+- candidate: disposable detached worktree formed with
+  `git merge --no-ff --no-commit debug/003-actions-git-auth`; automatic merge
+  completed without conflict and did not mutate protected `main`.
+- integrated gates: fresh `npm ci` reported 0 vulnerabilities; `npm test`
+  passed 98/98; lint checked 28 files; typecheck and snapshot coverage check
+  exited 0.
+- integrated staged diff: `git diff --cached --check` and the installed staged
+  added-line secrets scanner both exited clean. Candidate merge was aborted and
+  its disposable worktree removed.
+- final source will add only this handback truth update; the exact resulting
+  head must repeat the same protected-destination candidate gate before approval.
+
 ## Handback
 
-- state: implementation committed and verified locally; protected integration
-  gate remains.
+- state: awaiting explicit owner approval for the exact protected-main merge
+  after the final source candidate repeats the clean integration gate.
 - exact repro/current result: external exit-128 reproduction is preserved above;
   deterministic local oracle at `8a80e05` exits 1 with the expected ordering
   failure, while fix commit `ca42c83` makes it pass 3/3.
@@ -160,7 +179,8 @@ rewrite prior predictions, decisions, or failed results.
   must be owner-observed after protected-main integration.
 - risks and intentionally unchanged areas: no bot token, group ID, delivery
   state, or Telegram transport will be accessed by this repair.
-- recommended next experiment or human decision: commit and validate an exact
-  protected-main integration candidate, then request merge approval.
+- recommended next experiment or human decision: approve the exact verified
+  merge into protected `main`; after merge, manually dispatch the test alias
+  with preview and force both false.
 - cleanup/retained state: debug worktree retained while in progress; existing
   record/002 and Claude-locked feature worktrees remain untouched.
