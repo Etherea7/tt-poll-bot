@@ -23,9 +23,13 @@ observed before any implementation. Requirement IDs refer to `spec.md`.
 
 Listed so a cold reader sees the boundary, not because they are forgotten.
 
-- [ ] T5. Holiday source: data.gov.sg two-step download, snapshot fallback,
-  schema validation (R6, R14, R15). — AC6, AC14, AC15
-- [ ] T6. Snapshot staleness CI check (R17). — AC17
+- [x] T5. Holiday source: data.gov.sg three-step download, snapshot fallback,
+  schema validation (R6, R14, R15). — AC6, AC14, AC15.
+  Test: `test/holidays.test.ts`. Red observed 2026-08-01T12:26:11Z (14
+  failures), green 12:27:08Z (40/40).
+- [x] T6. Snapshot staleness CI check (R17). — AC17.
+  Test: `test/snapshot.test.ts`, script `scripts/check-snapshot.ts`. Red
+  observed 2026-08-01T12:27:53Z (8 failures), green 12:29:03Z (48/48).
 - [ ] T7. Delivery record and per-kind guard (R18-R23). — AC18-AC22
 - [ ] T8. Telegram client: retry taxonomy, migration detection, redaction
   (R11, R24-R30). — AC11, AC24-AC30

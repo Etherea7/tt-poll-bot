@@ -273,6 +273,52 @@ holiday source. Deferred work is listed explicitly in `tasks.md`.
   explicit `!**/.claude` exclude. Result: lint exit 0, "Checked 12 files"
   rather than the whole nested tree. Committed as `4dc7877`.
 
+## Increment 2 — holiday source and snapshot (T5, T6)
+
+- [x] T5 red observed 2026-08-01T12:26:11Z (14 failures, all traceable to
+  `not implemented`), green 12:27:08Z (40/40).
+- [x] T6 red observed 2026-08-01T12:27:53Z (8 failures: 7 `not implemented`
+  plus the deliberately absent `data/holidays.json`), green 12:29:03Z (48/48).
+- [x] Snapshot generated from the live source: `npm run snapshot:refresh` →
+  104 holidays covering 2020-2027, 7.6 KB.
+- [x] `npm run snapshot:check` exit 0 — "covers to 2027-12 (needs 2027-02)".
+- [x] All gates green 2026-08-01T12:30:54Z — tests 48/48, lint, typecheck,
+  snapshot:check, preview, all exit 0.
+- [x] Exit codes verified individually against the spec: offline fallback 0,
+  uncovered year 1 (R15), covered-but-empty month 0 (R16), non-preview 2.
+- [x] Docs updated — `docs/USAGE.md` gains the holiday source, the
+  never-derive-observed-days rule, snapshot commands, and an exit-code table;
+  `AGENTS.md` gains the same constraints so future agents do not re-derive them.
+- [x] Secrets scan clean; commit `11feb88`, 12 files, 1133 insertions.
+
+### Increment 2 decisions
+
+- 2026-08-01 **Observed holidays are taken from the dataset, never derived.**
+  Probing the live source before designing showed MOM marks them `(Observed)`
+  as their own rows. Critically, the substitute is not always the following
+  Monday: `2022-05-03,Tuesday,Labour Day (Observed)` — Labour Day fell on
+  Sunday 1 May and Monday 2 May was already Hari Raya Puasa. A derived
+  "Sunday → next Monday" rule would have produced a wrong date roughly once
+  every few years, in a way no unit test written against the rule would catch.
+  That row is now a regression fixture.
+- 2026-08-01 Snapshot keeps all years the source publishes (2020 onward) rather
+  than only future ones. It is 7.6 KB, and a straight copy has no transformation
+  step that can go wrong at refresh time.
+- 2026-08-01 Snapshot shape is trimmed to `{date, name}` per owner decision;
+  the dataset's `day` column is derivable and was dropped.
+
+### Increment 2 loop log
+
+- **Attempt 5 — Biome ignore pattern made the lint gate vacuous.** Prediction:
+  the `!**/.claude` exclude added in `4dc7877` was safe. Observed: running lint
+  from inside the feature worktree reported "Checked 0 files" and exit 1,
+  because the worktree's own absolute path lives under `.claude/worktrees/` and
+  matched the pattern. Had Biome not errored on an empty file set, this would
+  have been a gate that silently verified nothing. Change: narrowed the pattern
+  to `!.claude` so it anchors at the project root. Result verified in **both**
+  contexts — 19 files checked from inside the worktree, 12 from the repository
+  root with the nested tree still excluded.
+
 ## Merge record
 
 - merge commit: `28ce65f` — `feature/001-monthly-telegram-polls` into `main`
