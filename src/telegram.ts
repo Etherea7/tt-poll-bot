@@ -7,7 +7,6 @@ export interface TelegramConfig {
   readonly apiBase?: string;
   readonly fetchImpl?: typeof fetch;
   readonly maxAttempts?: number;
-  readonly baseDelayMs?: number;
   /** Injectable so tests can assert on wait durations without elapsing them. */
   readonly sleepImpl?: (ms: number) => Promise<void>;
 }
@@ -23,8 +22,7 @@ export class SupergroupMigrationError extends Error {
 
   constructor(fromChatId: string, toChatId: number) {
     super(
-      `chat ${fromChatId} has migrated to supergroup ${toChatId}; ` +
-        'update the configured group id',
+      `configured destination migrated to supergroup ${toChatId}; update runtime configuration`,
     );
     this.name = 'SupergroupMigrationError';
     this.fromChatId = fromChatId;
@@ -38,8 +36,8 @@ export class SupergroupMigrationError extends Error {
  * a missing one. (R27)
  */
 export class AmbiguousDeliveryError extends Error {
-  constructor(method: string) {
-    super(`${method} timed out after the request was sent; outcome unknown, not retrying`);
+  constructor(method: string, detail: string = 'outcome unknown') {
+    super(`${method} ${detail}; not retrying`);
     this.name = 'AmbiguousDeliveryError';
   }
 }
@@ -88,8 +86,8 @@ const defaultSleep = (ms: number): Promise<void> =>
   });
 
 /**
- * A timeout means the request was already transmitted, so the outcome is
- * unknown. Every other connection failure happened before a response.
+ * Fetch does not reveal whether a failing request reached Telegram, so every
+ * thrown fetch error is conservatively ambiguous.
  */
 const isTimeout = (error: unknown): boolean =>
   error instanceof Error && (error.name === 'TimeoutError' || error.name === 'AbortError');
@@ -97,9 +95,8 @@ const isTimeout = (error: unknown): boolean =>
 /**
  * Call a Bot API method with the retry taxonomy from R24-R27.
  *
- * Retried: HTTP 429 honouring `retry_after`, 5xx, and connection failures that
- * occur before any response. Those provably did not deliver.
- * Not retried: a timeout after transmission, and any other 4xx.
+ * Retried: HTTP 429 honouring `retry_after`.
+ * Not retried: 5xx responses, thrown fetch errors, and any other 4xx.
  */
 export async function callApi(
   config: TelegramConfig,
@@ -109,14 +106,12 @@ export async function callApi(
   const doFetch = config.fetchImpl ?? fetch;
   const sleep = config.sleepImpl ?? defaultSleep;
   const maxAttempts = config.maxAttempts ?? 3;
-  const baseDelayMs = config.baseDelayMs ?? 500;
   const url = `${config.apiBase ?? TELEGRAM_API_BASE}/bot${config.token}/${method}`;
   const redact = (text: string) => redactToken(text, config.token);
 
   let lastError: Error | undefined;
 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    const backoff = baseDelayMs * 2 ** (attempt - 1);
     let response: Response;
 
     try {
@@ -127,22 +122,15 @@ export async function callApi(
         signal: AbortSignal.timeout(30_000),
       });
     } catch (error) {
-      // R26: never retry an ambiguous outcome. A duplicate poll in a live
-      // group is worse than a missing one.
       if (isTimeout(error)) {
-        throw new AmbiguousDeliveryError(method);
+        throw new AmbiguousDeliveryError(method, 'timed out after request submission');
       }
-      // R25: no response was received, so nothing was delivered.
-      lastError = new Error(
+      throw new AmbiguousDeliveryError(
+        method,
         redact(
-          `${method} connection failure: ${error instanceof Error ? error.message : String(error)}`,
+          `failed without a response: ${error instanceof Error ? error.message : String(error)}`,
         ),
       );
-      if (attempt < maxAttempts) {
-        await sleep(backoff);
-        continue;
-      }
-      throw lastError;
     }
 
     const payload = (await response.json().catch(() => ({}))) as ApiEnvelope;
@@ -169,12 +157,7 @@ export async function callApi(
     }
 
     if (response.status >= 500) {
-      lastError = new Error(redact(`${method} failed with ${response.status}`));
-      if (attempt < maxAttempts) {
-        await sleep(backoff);
-        continue;
-      }
-      throw lastError;
+      throw new AmbiguousDeliveryError(method, `returned HTTP ${response.status}`);
     }
 
     // Any other 4xx is a request the bot must not repeat.

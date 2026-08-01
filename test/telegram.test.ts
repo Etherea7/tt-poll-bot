@@ -44,7 +44,6 @@ const recorder = (responses: Array<() => Response | Promise<Response>>) => {
 const config = (fetchImpl: typeof fetch) => ({
   token: TOKEN,
   fetchImpl,
-  baseDelayMs: 0,
 });
 
 // R30: the token must never reach a log or an error message.
@@ -100,7 +99,6 @@ test('callApi waits for retry_after then retries a 429', async () => {
     {
       token: TOKEN,
       fetchImpl,
-      baseDelayMs: 0,
       sleepImpl: async (ms: number) => {
         waits.push(ms);
       },
@@ -115,9 +113,7 @@ test('callApi waits for retry_after then retries a 429', async () => {
 
 // AC6 (R8): a 5xx is ambiguous, so it is never retried automatically.
 test('callApi does not retry a 5xx response', async () => {
-  const { fetchImpl, calls } = recorder([
-    () => json({ ok: false }, 500),
-  ]);
+  const { fetchImpl, calls } = recorder([() => json({ ok: false }, 500)]);
   await assert.rejects(callApi(config(fetchImpl), 'sendPoll', {}), /500/);
   assert.equal(calls.length, 1, 'a 5xx outcome may have delivered the poll');
 });
@@ -172,6 +168,7 @@ test('callApi raises a migration error carrying the new chat id', async () => {
     assert.ok(error instanceof SupergroupMigrationError);
     assert.equal(error.toChatId, -1009876543210);
     assert.match(error.message, /-1009876543210/);
+    assert.doesNotMatch(error.message, /-100123/);
     return true;
   });
 });

@@ -154,8 +154,9 @@ data.gov.sg requires:
    repeatedly until the response carries a signed `url`
 3. `GET` that signed URL to retrieve the CSV
 
-Unauthenticated use is limited to roughly 5 requests per minute, so the poll
-loop needs a bounded attempt count and a delay between attempts. This
+Unauthenticated Dataset Downloads calls are limited to 2 per 10 seconds, so
+API calls need at least 5 seconds of spacing, a bounded attempt count, and a
+per-request timeout. This
 multi-step, rate-limited, third-party dependency is precisely why the snapshot
 fallback exists.
 
@@ -192,9 +193,9 @@ post to a live group.
 ### Secrets versus variables
 
 - `TELEGRAM_BOT_TOKEN` → repository **secret**. Masked in logs automatically.
-- `TELEGRAM_GROUP_IDS` → repository **variable** (comma-separated). Group IDs
-  are not credentials; a variable keeps them out of git while remaining
-  reviewable in the repository settings UI, which a secret would not be.
+- `TELEGRAM_DESTINATIONS` → repository **variable** (comma-separated
+  `alias=chatId` mappings). Aliases enter delivery state; chat IDs remain out of
+  git while the mapping stays reviewable in repository settings.
 
 ## Implementation sequence
 

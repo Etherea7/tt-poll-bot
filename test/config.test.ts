@@ -9,9 +9,7 @@ const env = (overrides: Record<string, string | undefined> = {}) => ({
 });
 
 type HardenedConfig = {
-  readonly preview: boolean;
-  readonly live: boolean;
-  readonly prepare: boolean;
+  readonly mode: 'preview' | 'prepare' | 'live';
   readonly claimId: string | undefined;
   readonly destinations: readonly { readonly alias: string; readonly chatId: string }[];
 };
@@ -21,24 +19,25 @@ const hardened = (argv: readonly string[], overrides: Record<string, string | un
 
 // Only the negative grammar checks retain this legacy variable so the current
 // parser reaches argv processing. Hardened configuration must not require it.
-const withLegacyGroups = (argv: readonly string[], overrides: Record<string, string | undefined> = {}) =>
-  hardened(argv, { TELEGRAM_GROUP_IDS: '-1001,-1002', ...overrides });
+const withLegacyGroups = (
+  argv: readonly string[],
+  overrides: Record<string, string | undefined> = {},
+) => hardened(argv, { TELEGRAM_GROUP_IDS: '-1001,-1002', ...overrides });
 
 // AC7 (R9): no flag must be the safe mode. The current CLI defaults to live.
 test('parseConfig defaults to preview without requiring a token', () => {
   const config = hardened([], { TELEGRAM_BOT_TOKEN: undefined });
-  assert.equal(config.preview, true);
-  assert.equal(config.live, false);
+  assert.equal(config.mode, 'preview');
 });
 
 test('parseConfig requires explicit live and prepare modes', () => {
-  const live = hardened(['--live']);
-  assert.equal(live.preview, false);
-  assert.equal(live.live, true);
+  assert.throws(() => hardened(['--live']), /claim/i);
+  const live = hardened(['--live', '--claim', 'run-123']);
+  assert.equal(live.mode, 'live');
 
   assert.throws(() => hardened(['--prepare']), /claim/i);
   const prepared = hardened(['--prepare', '--claim', 'run-123']);
-  assert.equal(prepared.prepare, true);
+  assert.equal(prepared.mode, 'prepare');
   assert.equal(prepared.claimId, 'run-123');
   assert.throws(() => hardened(['--preview', '--live']), /exclusive|mode/i);
 });
@@ -76,12 +75,21 @@ test('parseConfig accepts unique destination aliases and rejects invalid mapping
   ]);
 });
 
+test('parseConfig narrows destinations with a unique known --to alias list', () => {
+  const config = hardened(['--to', 'club']);
+  assert.deepEqual(config.destinations, [{ alias: 'club', chatId: '-1002' }]);
+  for (const argv of [['--to'], ['--to', ''], ['--to', 'club,club'], ['--to', 'missing']]) {
+    assert.throws(() => hardened(argv), /to|alias|value/i, argv.join(' '));
+  }
+});
+
 test('parseConfig rejects invalid or duplicate destination aliases', () => {
   for (const destinations of [
     'test=-1001,test=-1002',
     'test=-1001,club=-1001',
     '=-1001',
     'test=',
+    'test=not-a-group-id',
     'not-a-mapping',
   ]) {
     assert.throws(

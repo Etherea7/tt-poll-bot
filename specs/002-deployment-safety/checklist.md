@@ -42,6 +42,11 @@ rewrite prior predictions, decisions, or failed results.
   Telegram chat ID.
 - 2026-08-01 Use a durable pre-send claim keyed to a run identifier; automatic
   recovery from stale/ambiguous claims is intentionally excluded.
+- 2026-08-01 Add `--to` destination scoping so an inspected group/kind can be
+  force-recovered without reclaiming already-delivered work in another group.
+- 2026-08-01 Correct the root-anchored Biome exclusion from `!**/.worktrees` to
+  `!.worktrees`; the former ignored every file from inside the required debug
+  worktree and made the lint gate vacuous.
 
 ## Steps
 
@@ -60,8 +65,11 @@ rewrite prior predictions, decisions, or failed results.
 - [x] Rank causal hypotheses and discriminating experiments — the four
   high-confidence mechanisms below have direct code evidence and deterministic
   regression oracles.
-- [ ] Resolve through bounded hypothesis loop
-- [ ] Verify original repro, targeted tests, and regression gates
+- [x] Resolve through bounded hypothesis loop — attempt 1/3 confirmed and fixed
+  all four supported mechanisms; no alternative hypothesis was needed.
+- [x] Verify original repro, targeted tests, and regression gates — `npm test`
+  97/97, lint 28 files, typecheck, snapshot check, audit, coverage, offline
+  preview, and live-source preview all exited 0; no Telegram transport ran.
 - [ ] Secrets-scan, commit, and persist truthful hashes
 - [ ] Merge under destination policy and verify final tree
 
@@ -134,6 +142,11 @@ rewrite prior predictions, decisions, or failed results.
   config, and workflow behaviour | observed result: prediction confirmed;
   combined `npm test` exited 1 (100 tests, 83 pass, 17 fail), and the separate
   uncovered-output oracle also failed exactly on the false holiday message.
+- attempt 1/3 outcome after change: confirmed root-cause fix. Full suite exited
+  0 (97/97); transport tests issue one call for 5xx/generic/timeout and only
+  retry 429; per-alias claim/recovery, snapshot fallback, request timeout/quota,
+  strict config, and workflow ordering regressions are green. Coverage is
+  95.80% lines, 85.49% branches, 97.40% functions.
 
 ## Infrastructure events
 
@@ -144,16 +157,21 @@ rewrite prior predictions, decisions, or failed results.
 
 ## Handback
 
-- state: in progress.
+- state: implementation and local verification complete; persistence and
+  protected-destination integration verification pending.
 - exact repro/current result: `npm test` exits 1 on the red oracle; targeted
   uncovered test command is recorded above. Red-oracle commit: `3a7f0ae`.
-- attempted hypotheses and findings: attempt 1/3 in progress.
+- attempted hypotheses and findings: attempt 1/3 confirmed; all four causal
+  mechanisms resolved without a failed hypothesis.
 - supported facts vs inference: code-level findings are supported; workflow
   failure recovery remains to be verified through tests and inspection.
-- remaining hypotheses/evidence needed: explorer returns and red test outputs.
+- remaining hypotheses/evidence needed: none locally. GitHub-hosted permissions,
+  branch rules, and the real test-group Bot API behaviour require the documented
+  owner-observed rollout after merge.
 - risks and intentionally unchanged areas: no live group or bot token; main is
   unchanged; no production destination will be configured.
-- recommended next experiment or human decision: implement regressions, then
-  run the bounded fix loop.
+- recommended next experiment or human decision: commit and verify the fix,
+  form a clean protected-main integration candidate, then request the exact
+  merge decision.
 - cleanup/retained state: debug worktree retained while work is in progress;
   Claude's pre-existing locked feature worktree is untouched.

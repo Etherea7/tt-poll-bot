@@ -1,11 +1,7 @@
 name: Monthly polls
 
-# Runs on the 25th and targets the FOLLOWING month, so members have notice
-# before it begins — including when the 1st is itself a public holiday.
-#
-# The :17 offset avoids the top of the hour, which GitHub documents as a
-# high-load window for scheduled workflows. A delay of hours is harmless here
-# because the run happens six days before the month it describes.
+# Runs on the 25th for the following month. Manual dispatch is preview-only by
+# default; a scheduled or explicitly live dispatch uses a two-phase state claim.
 on:
   schedule:
     - cron: '17 9 25 * *'
@@ -25,19 +21,19 @@ on:
         description: 'Comma-separated subset: fridays,saturdays,holidays'
         required: false
         type: string
+      to:
+        description: 'Comma-separated destination aliases. Blank means all.'
+        required: false
+        type: string
       force:
-        description: 'Resend even if the delivery record says it already went out'
+        description: 'Explicitly replace existing delivery state during prepare'
         required: false
         type: boolean
         default: false
 
-# Needed to commit the delivery record, which is what prevents a duplicate
-# post. The built-in token can write repository contents; repository variables
-# would have required an extra fine-grained PAT.
 permissions:
   contents: write
 
-# Never let two runs post to the same group concurrently.
 concurrency:
   group: monthly-polls
   cancel-in-progress: false
@@ -46,46 +42,116 @@ jobs:
   post:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      # npm lifecycle scripts never receive a persisted Git write credential.
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+          fetch-depth: 0
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version-file: .nvmrc
+          cache: npm
 
       - run: npm ci
 
-      # Inputs are passed through the environment rather than interpolated into
-      # the run script, so a crafted input cannot be executed as shell.
-      - name: Send polls
+      - name: Preview polls
+        if: github.event_name == 'workflow_dispatch' && inputs.preview
         env:
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_GROUP_IDS: ${{ vars.TELEGRAM_GROUP_IDS }}
+          TELEGRAM_DESTINATIONS: ${{ vars.TELEGRAM_DESTINATIONS }}
           INPUT_MONTH: ${{ inputs.month }}
-          INPUT_PREVIEW: ${{ inputs.preview }}
           INPUT_ONLY: ${{ inputs.only }}
-          INPUT_FORCE: ${{ inputs.force }}
-        run: |
-          set -uo pipefail
-          args=()
-          if [ -n "${INPUT_MONTH:-}" ]; then args+=(--month "$INPUT_MONTH"); fi
-          if [ -n "${INPUT_ONLY:-}" ]; then args+=(--only "$INPUT_ONLY"); fi
-          if [ "${INPUT_PREVIEW:-}" = "true" ]; then args+=(--preview); fi
-          if [ "${INPUT_FORCE:-}" = "true" ]; then args+=(--force); fi
-          echo "running: node src/main.ts ${args[*]:-<scheduled live run>}"
-          node src/main.ts "${args[@]}"
-
-      # Runs even when the send step failed, so kinds that did land are
-      # recorded and a recovery re-run will not duplicate them.
-      - name: Commit delivery record
-        if: always()
+          INPUT_TO: ${{ inputs.to }}
         run: |
           set -euo pipefail
-          if [ -n "$(git status --porcelain state/ 2>/dev/null)" ]; then
-            git config user.name  'github-actions[bot]'
-            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-            git add state/
-            git commit -m 'chore(state): record delivered polls [skip ci]'
-            git push
-          else
-            echo 'no delivery-record change to commit'
+          args=(--preview)
+          if [ -n "${INPUT_MONTH:-}" ]; then args+=(--month "$INPUT_MONTH"); fi
+          if [ -n "${INPUT_ONLY:-}" ]; then args+=(--only "$INPUT_ONLY"); fi
+          if [ -n "${INPUT_TO:-}" ]; then args+=(--to "$INPUT_TO"); fi
+          node src/main.ts "${args[@]}"
+
+      # A unique claim separates this workflow attempt from any stale claim
+      # left by cancellation, an ambiguous Telegram response, or a failed push.
+      - name: Prepare durable delivery claims
+        if: github.event_name == 'schedule' || !inputs.preview
+        env:
+          TELEGRAM_DESTINATIONS: ${{ vars.TELEGRAM_DESTINATIONS }}
+          CLAIM_ID: ${{ github.run_id }}-${{ github.run_attempt }}
+          INPUT_MONTH: ${{ inputs.month }}
+          INPUT_ONLY: ${{ inputs.only }}
+          INPUT_TO: ${{ inputs.to }}
+          INPUT_FORCE: ${{ inputs.force }}
+        run: |
+          set -euo pipefail
+          args=(--prepare --claim "$CLAIM_ID")
+          if [ -n "${INPUT_MONTH:-}" ]; then args+=(--month "$INPUT_MONTH"); fi
+          if [ -n "${INPUT_ONLY:-}" ]; then args+=(--only "$INPUT_ONLY"); fi
+          if [ -n "${INPUT_TO:-}" ]; then args+=(--to "$INPUT_TO"); fi
+          if [ "${INPUT_FORCE:-}" = "true" ]; then args+=(--force); fi
+          node src/main.ts "${args[@]}"
+
+      - name: Push prepared delivery claims
+        if: github.event_name == 'schedule' || !inputs.preview
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if [ -z "$(git status --porcelain state/ 2>/dev/null)" ]; then
+            echo 'no new delivery claims to persist'
+            exit 0
           fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add state/
+          git commit -m 'chore(state): claim monthly polls [skip ci]'
+          git fetch origin "$GITHUB_REF_NAME"
+          git rebase "origin/$GITHUB_REF_NAME"
+          basic_auth=$(printf 'x-access-token:%s' "$GITHUB_TOKEN" | base64 -w0)
+          auth_key='http.https://github.com/.extraheader'
+          git config "$auth_key" "AUTHORIZATION: basic $basic_auth"
+          trap 'git config --unset-all "$auth_key" || true' EXIT
+          git push origin "HEAD:$GITHUB_REF_NAME"
+
+      # Reaching this step proves the remote claim exists. A stale or different
+      # claim ID is rejected by the CLI before any Telegram request.
+      - name: Send claimed polls
+        id: live
+        if: github.event_name == 'schedule' || !inputs.preview
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_DESTINATIONS: ${{ vars.TELEGRAM_DESTINATIONS }}
+          CLAIM_ID: ${{ github.run_id }}-${{ github.run_attempt }}
+          INPUT_MONTH: ${{ inputs.month }}
+          INPUT_ONLY: ${{ inputs.only }}
+          INPUT_TO: ${{ inputs.to }}
+        run: |
+          set -euo pipefail
+          args=(--live --claim "$CLAIM_ID")
+          if [ -n "${INPUT_MONTH:-}" ]; then args+=(--month "$INPUT_MONTH"); fi
+          if [ -n "${INPUT_ONLY:-}" ]; then args+=(--only "$INPUT_ONLY"); fi
+          if [ -n "${INPUT_TO:-}" ]; then args+=(--to "$INPUT_TO"); fi
+          node src/main.ts "${args[@]}"
+
+      # Always try to publish exact per-destination successes. If this push
+      # fails, the already-pushed claims remain and block an automatic resend.
+      - name: Push delivered state
+        if: always() && (github.event_name == 'schedule' || !inputs.preview)
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if [ -z "$(git status --porcelain state/ 2>/dev/null)" ]; then
+            echo 'no delivered-state change to persist'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add state/
+          git commit -m 'chore(state): record delivered polls [skip ci]'
+          git fetch origin "$GITHUB_REF_NAME"
+          git rebase "origin/$GITHUB_REF_NAME"
+          basic_auth=$(printf 'x-access-token:%s' "$GITHUB_TOKEN" | base64 -w0)
+          auth_key='http.https://github.com/.extraheader'
+          git config "$auth_key" "AUTHORIZATION: basic $basic_auth"
+          trap 'git config --unset-all "$auth_key" || true' EXIT
+          git push origin "HEAD:$GITHUB_REF_NAME"

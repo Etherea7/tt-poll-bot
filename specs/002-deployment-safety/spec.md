@@ -45,7 +45,9 @@ commands.
 
 - R1. Runtime destination configuration SHALL use unique, non-secret aliases
   mapped to Telegram chat identifiers, and only aliases SHALL appear in the
-  committed delivery record or logs.
+  committed delivery record. Normal progress logs SHALL use aliases; a
+  supergroup-migration error MAY report Telegram's replacement identifier so
+  the runtime configuration can be corrected.
 - R2. Delivery state SHALL track each target month, destination alias, and poll
   kind independently.
 - R3. WHEN one destination succeeds and a later destination fails, a subsequent
@@ -67,9 +69,10 @@ commands.
 - R9. Preview SHALL be the default CLI mode. Telegram delivery SHALL require an
   explicit `--live` flag, and claim creation SHALL require `--prepare` plus a
   non-empty claim identifier.
-- R10. The CLI SHALL reject unknown flags, missing flag values, empty `--only`
-  and `--slots` values, duplicate or empty destination aliases, duplicate chat
-  identifiers, and mutually exclusive mode flags before network activity.
+- R10. The CLI SHALL reject unknown flags, missing flag values, empty `--only`,
+  `--to`, and `--slots` values, duplicate or empty destination aliases,
+  duplicate chat identifiers, unknown destination selectors, and mutually
+  exclusive mode flags before network activity.
 - R11. WHEN live holiday data is valid but does not cover the target year, the
   resolver SHALL use a covering committed snapshot before declaring the year
   uncovered.
@@ -133,6 +136,9 @@ commands.
   the post-send persistence gap without adding infrastructure.
 - 2026-08-01 Claims are tied to a workflow-supplied identifier. A stale claim is
   deliberately an operator stop, not permission for a new run to guess.
+- 2026-08-01 Recovery can be narrowed with `--to <alias>` plus `--only <kind>`;
+  force without destination scope is unsafe for multi-group recovery and is not
+  recommended operationally.
 - 2026-08-01 Only a Telegram 429 response is automatically retryable. The
   Fetch API does not expose enough transport detail to prove that generic
   connection errors or 5xx responses could not have delivered.
