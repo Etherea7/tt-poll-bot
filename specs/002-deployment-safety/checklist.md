@@ -1,7 +1,7 @@
 ---
 work: 002-deployment-safety
 workflow: debug
-status: in-progress
+status: awaiting-human
 updated: 2026-08-01
 links: { spec: specs/002-deployment-safety/spec.md, plan: null, tasks: null }
 ---
@@ -156,11 +156,34 @@ rewrite prior predictions, decisions, or failed results.
   Platform is unavailable | command/tool: wf-debug `secrets-check.sh` | scoped
   retry: read the script and applied its exact regex classes to staged added
   lines with PowerShell | result: clean; hypothesis count unchanged at 0.
+- event: first disposable-worktree removal was launched from inside its own
+  directory and Windows denied the final directory deletion | command/tool:
+  `git worktree remove --force` | scoped retry: reran from repository root;
+  Git had already deregistered and emptied it, so the verified empty directory
+  was removed non-recursively and worktrees pruned | result: cleanup complete;
+  hypothesis count unchanged at 0.
+
+## Protected-destination verification
+
+- destination: `main` at `11e14e3dd38182c29dceb031e597c9bd7a5f8197`,
+  clean and equal to `origin/main`.
+- source verified: `debug/002-deployment-safety` at `0baad66` (implementation
+  `860f40d` plus truth update).
+- candidate: disposable detached worktree, `git merge --no-ff --no-commit`,
+  automatic merge with no conflict and no protected-branch mutation.
+- integrated gates: `npm ci` (0 vulnerabilities), `npm test` 97/97,
+  `npm run lint` 28 files, `npm run typecheck`, `npm run snapshot:check`, and
+  offline November 2026 preview all exit 0.
+- integrated staged diff: `git diff --cached --check` clean and exact staged
+  added-line secrets scan clean. Merge aborted; disposable worktree removed.
+- exact source will include only this handback/index truth update after
+  `0baad66`; the final handback reruns the protected-destination gate against
+  that resulting head before requesting merge approval.
 
 ## Handback
 
-- state: implementation committed and local verification complete;
-  protected-destination integration verification pending.
+- state: awaiting explicit owner confirmation for the exact protected-main
+  merge after a clean integrated candidate.
 - exact repro/current result: `npm test` exits 1 on the red oracle; targeted
   uncovered test command is recorded above. Red-oracle commit: `3a7f0ae`.
 - attempted hypotheses and findings: attempt 1/3 confirmed; all four causal
@@ -170,10 +193,14 @@ rewrite prior predictions, decisions, or failed results.
 - remaining hypotheses/evidence needed: none locally. GitHub-hosted permissions,
   branch rules, and the real test-group Bot API behaviour require the documented
   owner-observed rollout after merge.
-- risks and intentionally unchanged areas: no live group or bot token; main is
-  unchanged; no production destination will be configured.
-- recommended next experiment or human decision: commit and verify the fix,
-  form a clean protected-main integration candidate, then request the exact
-  merge decision.
+- risks and intentionally unchanged areas: no live group or bot token was used;
+  GitHub-hosted token permissions/branch rules and Telegram test-group behaviour
+  remain rollout gates; `actionlint` was unavailable, while workflow structure
+  is covered by repository tests. Main remains unchanged.
+- recommended next experiment or human decision: approve the exact merge into
+  `main`, then follow `docs/USAGE.md` from snapshot check through preview and
+  the owner-observed test-group live dispatch.
 - cleanup/retained state: debug worktree retained while work is in progress;
-  Claude's pre-existing locked feature worktree is untouched.
+  disposable integration worktree removed; Claude's pre-existing locked
+  feature worktree/branch remains untouched because the owning session lock is
+  still registered.
