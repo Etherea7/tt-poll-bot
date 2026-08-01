@@ -77,7 +77,10 @@ evidence. Decisions are appended, never rewritten.
 - [x] Run the eight-check consistency pass and fix all findings. (evidence: see
   Consistency pass below; 3 findings, all fixed)
 - [x] Persist only the spec/checklist files after a staged secrets scan and
-  verify both documentation commits. (evidence: see Persistence below)
+  verify both documentation commits. (evidence: secrets scan clean on the
+  staged diff; artifacts committed as `8e5f2bf` covering spec.md, plan.md and
+  checklist.md, verified with `git log -1 --stat`; this checklist update
+  committed as a follow-up - see Persistence)
 
 ## Consistency pass
 
@@ -134,7 +137,14 @@ over from the draft. Four were wrong:
 
 - Secrets scan run against the staged diff before committing; no token, chat
   identifier, or credential present. The artifacts are documentation only.
-- Commit hashes recorded in the Handback section below.
+- `8e5f2bf` - docs(spec): 001-monthly-telegram-polls - spec ready. Contains
+  spec.md, plan.md, checklist.md and nothing else (verified with
+  `git log -1 --stat`). This is the repository's initial commit.
+- A follow-up commit records this checklist's own persistence evidence, so the
+  committed checklist is truthful to a cold reader who reads git rather than
+  the working tree.
+- No branch was created: `wf-plan` produces documents only, and branch and
+  worktree creation belongs to the implementation workflows.
 
 ## Handback
 
