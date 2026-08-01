@@ -218,6 +218,14 @@ holiday source. Deferred work is listed explicitly in `tasks.md`.
 - [x] Secrets scan and feature commit verified — `secrets-check: clean`;
   commit `1eeae2d`, 13 files changed, 771 insertions, verified with
   `git log -1 --stat`.
+- [x] Pre-merge verification on a clean checkout — `git merge --no-ff
+  --no-commit` formed on a disposable worktree at `main`, never in the
+  protected checkout. Secrets scan on the merged staged diff: clean. This
+  surfaced a real defect; see Feature loop log attempt 3.
+- [x] Fresh-checkout gates green, 2026-08-01T11:34:54Z — a detached worktree at
+  the feature branch (simulating a post-merge clone) ran `npm ci`, then
+  `npm test` exit 0 (26/26), `npm run lint` exit 0, `npm run typecheck` exit 0,
+  and preview exit 0.
 - [ ] Merge gate: explicit owner confirmation for the protected destination
 
 ## Feature loop log
@@ -233,6 +241,22 @@ holiday source. Deferred work is listed explicitly in `tasks.md`.
   Change: `biome check --write`. Result: exit 0; the diff was purely
   cosmetic line-collapsing, and tests plus typecheck were re-run green
   afterwards to confirm no assertion changed.
+
+- **Attempt 3 — CRLF defect found by pre-merge verification.** Prediction: the
+  gates green in the feature worktree would be green on the merged tree.
+  Observed: `npm run lint` exit 1 on a clean checkout, with every file reported
+  as needing reformatting and `␍` visible in the diff. Diagnosis: Git converts
+  LF to CRLF on checkout under Windows autocrlf, so the authoring worktree
+  (files written with LF) passed while any fresh clone failed — and a Linux CI
+  runner would have passed while a Windows clone failed, hiding the defect from
+  whoever introduced it. Change: added `.gitattributes` with `* text=auto
+  eol=lf` and ran `git add --renormalize .`, which confirmed the committed
+  blobs were already LF. Result: a fresh detached checkout of the feature
+  branch passes lint, tests, typecheck and preview, all exit 0. Committed as
+  `dcf0c7d`.
+
+  This is why the verification forms the merge on a clean checkout rather than
+  trusting the worktree the code was written in.
 
 ## Feature handback
 
