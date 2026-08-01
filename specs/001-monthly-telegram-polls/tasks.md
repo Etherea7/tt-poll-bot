@@ -30,13 +30,17 @@ Listed so a cold reader sees the boundary, not because they are forgotten.
 - [x] T6. Snapshot staleness CI check (R17). — AC17.
   Test: `test/snapshot.test.ts`, script `scripts/check-snapshot.ts`. Red
   observed 2026-08-01T12:27:53Z (8 failures), green 12:29:03Z (48/48).
-- [ ] T7. Delivery record and per-kind guard (R18-R23). — AC18-AC22
-- [ ] T8. Telegram client: retry taxonomy, migration detection, redaction
-  (R11, R24-R30). — AC11, AC24-AC30
-- [ ] T9. Coordinator: config validation, build-before-send, preview, scope
-  selector, fan-out (R12, R13, R31). — AC12, AC13, AC23, AC31
-- [ ] T10. GitHub Actions workflow, secrets/variables, failure notification
-  (R29, R32, R33). — AC29, AC32, AC33
+- [x] T7. Telegram client: retry taxonomy, migration detection, redaction
+  (R11, R24-R30). — AC11, AC25-AC30. Test: `test/telegram.test.ts`.
+  Red 2026-08-01T12:36:40Z, green 12:38:03Z.
+- [x] T8. Delivery record and per-kind guard (R18-R23). — AC18-AC22.
+  Test: `test/delivery.test.ts`. Same red/green runs as T7.
+- [x] T9. Coordinator: config validation, build-before-send, preview, scope
+  selector, fan-out (R12, R13, R31). — AC12, AC13, AC23, AC24, AC31.
+  Test: `test/run.test.ts`. Red 2026-08-01T12:39:10Z, green 12:40:42Z.
+- [x] T10. GitHub Actions workflows, secrets/variables, failure notification
+  (R29, R32, R33). — AC29, AC32, AC33.
+  `.github/workflows/monthly-polls.yml` and `ci.yml`.
 
 ## Notes
 

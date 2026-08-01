@@ -1,30 +1,35 @@
 # Usage
 
+## Configuration
+
+| Variable | Where it lives | Purpose |
+|---|---|---|
+| `TELEGRAM_BOT_TOKEN` | GitHub **secret** | Bot credential. Masked in logs. Not needed for `--preview`. |
+| `TELEGRAM_GROUP_IDS` | GitHub **variable** | Comma-separated destination chat ids. |
+
+Group ids are not credentials, so they live in a repository *variable* — out of
+git, but reviewable in the settings UI, which a secret would not be.
+
 ## Preview a month
 
 Preview renders the exact poll payloads a live run would send, and never
-contacts Telegram.
+contacts Telegram. It works without a token.
 
 ```bash
-npm run preview                       # target month derived from today in Singapore
-node src/main.ts --preview --month 2026-09
+TELEGRAM_GROUP_IDS=-1001 npm run preview      # month derived from today in Singapore
+TELEGRAM_GROUP_IDS=-1001 node src/main.ts --preview --month 2026-11
 ```
 
-Holidays come from the live data.gov.sg dataset, falling back to the committed
-snapshot. Two flags override that:
+## Flags
 
-```bash
-node src/main.ts --preview --month 2026-09 --holidays 2026-09-15   # supply dates by hand
-node src/main.ts --preview --month 2026-11 --offline               # force the snapshot path
-```
-
-Override the Saturday time slots:
-
-```bash
-node src/main.ts --preview --month 2026-05 --slots "10am-12pm,7-9pm"
-```
-
-A non-preview invocation exits 2. Sending is deliberately not implemented yet.
+| Flag | Effect |
+|---|---|
+| `--preview` | Render only; issues no Telegram request |
+| `--month YYYY-MM` | Override the target month |
+| `--only fridays,saturdays,holidays` | Send a subset |
+| `--force` | Resend even if the delivery record says it already went out |
+| `--offline` | Skip the live holiday fetch and use the snapshot |
+| `--slots "10am-12pm,7-9pm"` | Override the Saturday time slots |
 
 ## What gets posted
 
@@ -96,16 +101,51 @@ The check runs in CI so staleness surfaces during ordinary development rather
 than during a scheduled run that has already lost its live source. MOM publishes
 the next year around Q3.
 
-## Not built yet
+## Duplicate protection
 
-The Telegram client, the delivery record that prevents duplicate posts, the run
-coordinator, and the scheduled GitHub Actions workflow. See
-`specs/001-monthly-telegram-polls/tasks.md`.
+`state/delivered.json` maps each target month to the poll kinds already
+delivered **to every destination**:
+
+```json
+{ "2026-11": ["fridays", "saturdays", "holidays"] }
+```
+
+A run sends only the kinds not yet recorded. If all are recorded it sends
+nothing and exits 0 — a successful no-op, not a failure. `--force` overrides it.
+
+Tracking is per *kind*, not per month, so recovering from a partially failed
+run cannot duplicate a poll that already landed: just re-run, and only the
+missing kind goes out. The workflow commits this file even when the send step
+failed, for exactly that reason.
+
+## Deploying
+
+1. Create the bot with BotFather. Never put the token in a tracked file.
+2. Keep the repository **private** — scheduled workflows are auto-disabled
+   after 60 days of inactivity in *public* repositories, which is precisely the
+   failure mode of a job that runs twelve times a year.
+3. Add the bot to the test group and get that group's numeric id.
+4. Set the `TELEGRAM_BOT_TOKEN` secret and the `TELEGRAM_GROUP_IDS` variable to
+   the test group only.
+5. Dispatch the workflow manually with `preview` left **true** (the default) and
+   check the rendered output.
+6. Dispatch again with `preview` false to send for real. Verify question text,
+   options, that voters are named, and that multi-select works.
+7. Confirm `state/delivered.json` was committed, then dispatch the same month
+   again and confirm it is skipped with exit 0.
+8. Add production group ids only after review.
+9. Leave the schedule enabled last.
+
+The scheduled run fires at 09:17 Asia/Singapore on the 25th. GitHub can delay
+scheduled workflows under load; that is harmless here because the run happens
+six days before the month it describes.
 
 ## Exit codes
 
 | Code | Meaning |
 |---|---|
-| 0 | Preview rendered; holidays resolved (or the month genuinely has none) |
-| 1 | No holiday coverage from either source, or a build/validation failure |
-| 2 | Non-preview invocation — sending is not implemented |
+| 0 | Sent, previewed, or nothing left to send |
+| 1 | No holiday coverage from either source, a build failure, or a send failure |
+
+A run that exits non-zero fails the workflow, which is what surfaces the
+failure to an operator through GitHub's notification.

@@ -319,6 +319,47 @@ holiday source. Deferred work is listed explicitly in `tasks.md`.
   contexts — 19 files checked from inside the worktree, 12 from the repository
   root with the nested tree still excluded.
 
+## Increment 3 — Telegram client, delivery record, coordinator, workflows (T7-T10)
+
+- [x] T7/T8 red observed 2026-08-01T12:36:40Z (22 failures, all
+  `not implemented`), green 12:38:03Z (72/72).
+- [x] T9 red observed 2026-08-01T12:39:10Z (14 failures), green 12:40:42Z
+  (87/87).
+- [x] T10 workflows written: `monthly-polls.yml` (cron `17 9 25 * *` with
+  `timezone: Asia/Singapore`, `workflow_dispatch` with month/preview/only/force,
+  `permissions: contents: write`, concurrency group) and `ci.yml` (tests, lint,
+  typecheck, snapshot freshness).
+- [x] All gates green — tests 87/87, lint, typecheck, snapshot:check, all exit 0.
+- [x] End-to-end through the real entry point: `node src/main.ts --preview
+  --month 2026-11` rendered all three polls with live holiday data, exit 0.
+
+### Increment 3 decisions
+
+- 2026-08-01 `manual dispatch defaults preview to true`. An accidental click on
+  "Run workflow" must not post to a live group.
+- 2026-08-01 Workflow inputs are passed through the **environment**, never
+  interpolated into the `run:` script. `${{ inputs.month }}` inlined into a
+  shell command would let a crafted input execute as shell.
+- 2026-08-01 The delivery record is committed with `if: always()`, so kinds
+  that did land are recorded even when a later kind failed. Without this, the
+  recovery re-run would duplicate the polls that succeeded.
+- 2026-08-01 `RunDeps` separates `holidayFetchImpl` from the Telegram
+  transport. Sharing one `fetch` would make "no Telegram request was issued"
+  untestable, because holiday resolution also uses the network.
+- 2026-08-01 The token is optional in preview mode. Requiring a secret to
+  render text would discourage using the one mode that cannot post.
+
+### Increment 3 loop log
+
+- **Attempt 6 — typecheck caught what the tests could not.** Prediction: green
+  tests meant the increment was done. Observed: `npm test` exit 0 but
+  `npm run typecheck` exit 1 — `test/delivery.test.ts` used `as const`,
+  producing a `readonly` tuple that is not assignable to the mutable
+  `DeliveryRecord` index signature. The test runner strips types and never saw
+  it. Change: dropped the `as const`. Result: typecheck exit 0, tests still
+  87/87. This is the case for keeping `tsc --noEmit` as a separate gate even
+  though nothing compiles the code.
+
 ## Merge record
 
 - merge commit: `28ce65f` — `feature/001-monthly-telegram-polls` into `main`

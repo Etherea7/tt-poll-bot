@@ -1,0 +1,36 @@
+name: CI
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+
+      - run: npm ci
+
+      - name: Tests
+        run: npm test
+
+      - name: Lint and format
+        run: npm run lint
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      # Fails when the committed holiday snapshot no longer reaches six months
+      # ahead, so staleness surfaces on an ordinary push rather than during a
+      # scheduled run that has already lost its live source. (R17)
+      - name: Holiday snapshot freshness
+        run: npm run snapshot:check

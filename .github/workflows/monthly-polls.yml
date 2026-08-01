@@ -1,0 +1,91 @@
+name: Monthly polls
+
+# Runs on the 25th and targets the FOLLOWING month, so members have notice
+# before it begins — including when the 1st is itself a public holiday.
+#
+# The :17 offset avoids the top of the hour, which GitHub documents as a
+# high-load window for scheduled workflows. A delay of hours is harmless here
+# because the run happens six days before the month it describes.
+on:
+  schedule:
+    - cron: '17 9 25 * *'
+      timezone: Asia/Singapore
+  workflow_dispatch:
+    inputs:
+      month:
+        description: 'Target month (YYYY-MM). Blank derives the following month.'
+        required: false
+        type: string
+      preview:
+        description: 'Render without contacting Telegram'
+        required: false
+        type: boolean
+        default: true
+      only:
+        description: 'Comma-separated subset: fridays,saturdays,holidays'
+        required: false
+        type: string
+      force:
+        description: 'Resend even if the delivery record says it already went out'
+        required: false
+        type: boolean
+        default: false
+
+# Needed to commit the delivery record, which is what prevents a duplicate
+# post. The built-in token can write repository contents; repository variables
+# would have required an extra fine-grained PAT.
+permissions:
+  contents: write
+
+# Never let two runs post to the same group concurrently.
+concurrency:
+  group: monthly-polls
+  cancel-in-progress: false
+
+jobs:
+  post:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+
+      - run: npm ci
+
+      # Inputs are passed through the environment rather than interpolated into
+      # the run script, so a crafted input cannot be executed as shell.
+      - name: Send polls
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_GROUP_IDS: ${{ vars.TELEGRAM_GROUP_IDS }}
+          INPUT_MONTH: ${{ inputs.month }}
+          INPUT_PREVIEW: ${{ inputs.preview }}
+          INPUT_ONLY: ${{ inputs.only }}
+          INPUT_FORCE: ${{ inputs.force }}
+        run: |
+          set -uo pipefail
+          args=()
+          if [ -n "${INPUT_MONTH:-}" ]; then args+=(--month "$INPUT_MONTH"); fi
+          if [ -n "${INPUT_ONLY:-}" ]; then args+=(--only "$INPUT_ONLY"); fi
+          if [ "${INPUT_PREVIEW:-}" = "true" ]; then args+=(--preview); fi
+          if [ "${INPUT_FORCE:-}" = "true" ]; then args+=(--force); fi
+          echo "running: node src/main.ts ${args[*]:-<scheduled live run>}"
+          node src/main.ts "${args[@]}"
+
+      # Runs even when the send step failed, so kinds that did land are
+      # recorded and a recovery re-run will not duplicate them.
+      - name: Commit delivery record
+        if: always()
+        run: |
+          set -euo pipefail
+          if [ -n "$(git status --porcelain state/ 2>/dev/null)" ]; then
+            git config user.name  'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git add state/
+            git commit -m 'chore(state): record delivered polls [skip ci]'
+            git push
+          else
+            echo 'no delivery-record change to commit'
+          fi
