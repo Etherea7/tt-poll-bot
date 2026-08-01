@@ -1,12 +1,18 @@
 ---
 work: 001-monthly-telegram-polls
-workflow: plan
-status: done
+workflow: feature
+status: in-progress
 updated: 2026-08-01
 links: { spec: spec.md, plan: plan.md, tasks: tasks.md }
 ---
 
 # Checklist - monthly Telegram availability polls
+
+> **Reconciliation, 2026-08-01.** This work item's clarification phase finished
+> (`workflow: plan`, `status: done`) and implementation then began, so the
+> frontmatter now tracks `workflow: feature`. The clarification record below is
+> preserved verbatim and is still true; the feature record is appended at the
+> end of this file. Nothing from the plan phase was rewritten.
 
 Read on entry; resume from the first unchecked step. Every tick carries
 evidence. Decisions are appended, never rewritten.
@@ -161,3 +167,48 @@ over from the draft. Four were wrong:
 - suggested next step for the human: run `wf-setup` to bootstrap the Node 24 +
   TypeScript scaffold and verified dev loop, then `wf-feature` against this spec
   following the implementation sequence in plan.md.
+
+---
+
+# Feature implementation record
+
+## Isolation
+
+- worktree: `C:\Users\65876\Documents\tt-tele-poll\.claude\worktrees\feature+001-monthly-telegram-polls`
+- branch: `feature/001-monthly-telegram-polls`
+- base branch: `main`, base commit: `07bf4cf`
+- BAILOUT_N: 3
+
+The native worktree facility places worktrees under `.claude/worktrees/`
+rather than the `.worktrees/` path named in the skill. The branch was renamed
+from the generated `worktree-feature+001-...` to `feature/001-...` to match the
+workflow contract, and `.claude/worktrees/` was added to the tracked
+`.gitignore` as part of this feature so the destination checkout stays clean.
+
+## Scope of this increment
+
+Pure domain logic only: target-month resolution, Saturday derivation, option
+rendering, and the poll builder. No network, no filesystem, no Telegram. The
+builder receives holiday dates as an argument so it does not depend on the
+holiday source. Deferred work is listed explicitly in `tasks.md`.
+
+## Gates
+
+- [ ] T1 red observed, then green: target-month resolution (AC1, AC2, AC3)
+- [ ] T2 red observed, then green: Saturday derivation (AC5)
+- [ ] T3 red observed, then green: option rendering (AC35, AC36)
+- [ ] T4 red observed, then green: poll builder (AC7-AC10, AC16, AC34, AC37-AC39)
+- [ ] Full regression suite green
+- [ ] Lint and typecheck green
+- [ ] Docs updated
+- [ ] Secrets scan and feature commit verified
+- [ ] Merge gate: explicit owner confirmation for the protected destination
+
+## Feature loop log
+
+- No attempts yet.
+
+## Feature handback
+
+- state: in progress
+- next action: resume from the first unchecked gate above

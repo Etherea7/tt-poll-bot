@@ -1,0 +1,37 @@
+# Tasks — 001 monthly Telegram availability polls
+
+Each implementation task names the failing test that proves it done. Red is
+observed before any implementation. Requirement IDs refer to `spec.md`.
+
+## This increment — pure domain logic, no I/O
+
+- [ ] T1. Target-month resolution in `Asia/Singapore` (R1, R2, R3).
+  Test: `test/clock.test.ts` — AC1, AC2, AC3.
+- [ ] T2. Saturday derivation (R5). Test: `test/calendar.test.ts` — AC5.
+- [ ] T3. Date and slot option rendering (R37, R38).
+  Test: `test/format.test.ts` — AC35, AC36.
+- [ ] T4. Poll builder: questions, de-duplication, ordering, option and length
+  limits, `allow_adding_options`, empty-holiday message, overflow guard
+  (R7, R8, R9, R10, R16, R34, R35, R36, R39, R40, R41).
+  Test: `test/polls.test.ts` — AC7, AC8, AC9, AC10, AC16, AC34, AC37, AC38, AC39.
+
+## Deferred to later increments
+
+Listed so a cold reader sees the boundary, not because they are forgotten.
+
+- [ ] T5. Holiday source: data.gov.sg two-step download, snapshot fallback,
+  schema validation (R6, R14, R15). — AC6, AC14, AC15
+- [ ] T6. Snapshot staleness CI check (R17). — AC17
+- [ ] T7. Delivery record and per-kind guard (R18-R23). — AC18-AC22
+- [ ] T8. Telegram client: retry taxonomy, migration detection, redaction
+  (R11, R24-R30). — AC11, AC24-AC30
+- [ ] T9. Coordinator: config validation, build-before-send, preview, scope
+  selector, fan-out (R12, R13, R31). — AC12, AC13, AC23, AC31
+- [ ] T10. GitHub Actions workflow, secrets/variables, failure notification
+  (R29, R32, R33). — AC29, AC32, AC33
+
+## Notes
+
+- The poll builder takes holiday dates as an argument rather than fetching
+  them, so it stays a pure function and T4 does not depend on T5.
+- `fridaysIn` already exists from the bootstrap first outcome and satisfies AC4.

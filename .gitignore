@@ -3,6 +3,7 @@ node_modules/
 
 # Workflow isolation (wf-feature / wf-debug worktrees)
 .worktrees/
+.claude/worktrees/
 
 # Local secrets — never commit a bot token or chat identifier
 .env
