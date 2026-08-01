@@ -113,34 +113,33 @@ test('callApi waits for retry_after then retries a 429', async () => {
   assert.ok((waits[0] ?? 0) >= 2000, `expected a wait of at least 2000ms, got ${waits[0]}`);
 });
 
-// AC26 (R25): retry 5xx with increasing delay.
-test('callApi retries a 5xx and succeeds', async () => {
+// AC6 (R8): a 5xx is ambiguous, so it is never retried automatically.
+test('callApi does not retry a 5xx response', async () => {
   const { fetchImpl, calls } = recorder([
     () => json({ ok: false }, 500),
-    () => json({ ok: false }, 502),
-    () => json({ ok: true, result: 'done' }),
   ]);
-  const result = await callApi(config(fetchImpl), 'sendPoll', {});
-  assert.equal(result, 'done');
+  await assert.rejects(callApi(config(fetchImpl), 'sendPoll', {}), /500/);
+  assert.equal(calls.length, 1, 'a 5xx outcome may have delivered the poll');
+});
+
+test('callApi gives up after the 429 retry budget', async () => {
+  const { fetchImpl, calls } = recorder([
+    () => json({ ok: false, parameters: { retry_after: 0 } }, 429),
+  ]);
+  await assert.rejects(callApi(config(fetchImpl), 'sendPoll', {}), /429|attempt/i);
   assert.equal(calls.length, 3);
 });
 
-test('callApi gives up after the attempt budget', async () => {
-  const { fetchImpl, calls } = recorder([() => json({ ok: false }, 500)]);
-  await assert.rejects(callApi(config(fetchImpl), 'sendPoll', {}), /500|attempt/i);
-  assert.equal(calls.length, 3);
-});
-
-// R25: a connection failure before any response is safe to retry.
-test('callApi retries a pre-response connection failure', async () => {
+// AC6 (R8): Fetch does not prove that a generic failure happened before
+// transmission, so it is treated as ambiguous rather than retried.
+test('callApi does not retry a generic fetch failure', async () => {
   let attempts = 0;
   const fetchImpl = (async () => {
     attempts += 1;
-    if (attempts < 3) throw new TypeError('fetch failed');
-    return json({ ok: true, result: 'done' });
+    throw new TypeError('fetch failed');
   }) as unknown as typeof fetch;
-  assert.equal(await callApi(config(fetchImpl), 'sendPoll', {}), 'done');
-  assert.equal(attempts, 3);
+  await assert.rejects(callApi(config(fetchImpl), 'sendPoll', {}), /fetch failed/);
+  assert.equal(attempts, 1, 'a generic fetch failure may have transmitted the poll');
 });
 
 // AC27 (R26): a post-transmission timeout is never retried.

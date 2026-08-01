@@ -116,6 +116,59 @@ test('run sends only the kinds not yet delivered', async () => {
   assert.equal(calls.filter((call) => call.method === 'sendPoll').length, 2); // 1 kind x 2 chats
 });
 
+// AC2 (R3): a completed destination/kind is not eligible for automatic
+// recovery merely because a later destination for that kind failed.
+test('run does not resend a successful destination after another destination fails', async () => {
+  const path = tempPath();
+  const firstRunCalls: Array<{ chatId: unknown }> = [];
+  let firstAttempt = 0;
+  const firstRunFetch = (async (_input: string | URL | Request, init?: RequestInit) => {
+    firstAttempt += 1;
+    const body = JSON.parse(String(init?.body ?? '{}')) as { chat_id?: unknown };
+    firstRunCalls.push({ chatId: body.chat_id });
+    if (firstAttempt === 2) {
+      return new Response(JSON.stringify({ ok: false, description: 'blocked' }), { status: 403 });
+    }
+    return new Response(JSON.stringify({ ok: true, result: {} }), { status: 200 });
+  }) as unknown as typeof fetch;
+
+  const failed = await run(parseConfig(env(), []), deps(firstRunFetch, path));
+  assert.equal(failed.exitCode, 1);
+  assert.deepEqual(firstRunCalls.map((call) => call.chatId), ['-1001', '-1002']);
+
+  const { fetchImpl: recoveryFetch, calls: recoveryCalls } = spyFetch();
+  const recovered = await run(parseConfig(env(), []), deps(recoveryFetch, path));
+
+  assert.equal(
+    recoveryCalls.filter((call) => call.method === 'sendPoll' && call.chatId === '-1001').length,
+    0,
+    'the first destination already received the Friday poll',
+  );
+  assert.equal(recovered.exitCode, 1, 'an incomplete destination claim requires operator recovery');
+});
+
+// AC4 (R5, R6): an ambiguous request has a durable pre-send claim. A later
+// automatic run owned by another claim id must not guess that it is safe to
+// send the same destination/kind again.
+test('run does not automatically resend a destination after an ambiguous timeout', async () => {
+  const path = tempPath();
+  let firstCalls = 0;
+  const timeoutFetch = (async () => {
+    firstCalls += 1;
+    throw new DOMException('The operation was aborted.', 'TimeoutError');
+  }) as unknown as typeof fetch;
+
+  const ambiguous = await run(parseConfig(env(), []), deps(timeoutFetch, path));
+  assert.equal(ambiguous.exitCode, 1);
+  assert.equal(firstCalls, 1);
+
+  const { fetchImpl: recoveryFetch, calls: recoveryCalls } = spyFetch();
+  const recovered = await run(parseConfig(env(), []), deps(recoveryFetch, path));
+
+  assert.equal(recoveryCalls.length, 0, 'an ambiguous destination/kind must not be sent automatically');
+  assert.equal(recovered.exitCode, 1, 'a different automatic run must stop at the unresolved claim');
+});
+
 // AC22 (R21): force overrides the guard.
 test('run resends everything when forced', async () => {
   const { fetchImpl, calls } = spyFetch();
@@ -167,6 +220,21 @@ test('run sends the informational message for a month with no holidays', async (
   );
   assert.equal(outcome.exitCode, 0);
   assert.equal(calls.filter((call) => call.method === 'sendMessage').length, 2);
+});
+
+// AC9 (R12): missing coverage is not the same as a covered month with zero
+// holidays. The holiday payload must be suppressed rather than making a false
+// factual claim.
+test('run omits holiday work when the target year is uncovered', async () => {
+  const { fetchImpl, calls } = spyFetch();
+  const outcome = await run(
+    parseConfig(env(), ['--preview', '--month', '2030-05']),
+    deps(fetchImpl, tempPath()),
+  );
+
+  assert.equal(outcome.exitCode, 1);
+  assert.equal(calls.length, 0);
+  assert.doesNotMatch(outcome.lines.join('\n'), /\[poll: holidays\]|\[message: holidays\]/);
 });
 
 // AC13 (R13): the bot never learns a destination from Telegram.

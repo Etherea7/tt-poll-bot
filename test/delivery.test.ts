@@ -14,9 +14,24 @@ import {
 const ALL = ['fridays', 'saturdays', 'holidays'] as const;
 const tempPath = (name: string) => join(mkdtempSync(join(tmpdir(), 'ttpoll-')), name);
 
-test('parseDeliveryRecord accepts a well-formed record', () => {
-  const record = parseDeliveryRecord({ '2026-09': ['fridays', 'saturdays'] });
-  assert.deepEqual(record, { '2026-09': ['fridays', 'saturdays'] });
+// AC1 (R1, R2): the durable record names configured aliases, never chat IDs,
+// and gives every destination/kind an independently recoverable status.
+test('parseDeliveryRecord retains per-alias delivery statuses without chat ids', () => {
+  const persisted = {
+    '2026-11': {
+      test: {
+        fridays: { status: 'delivered', claimId: 'run-1' },
+        saturdays: { status: 'claimed', claimId: 'run-1' },
+      },
+      club: {
+        fridays: { status: 'claimed', claimId: 'run-1' },
+      },
+    },
+  };
+
+  const record = parseDeliveryRecord(persisted);
+  assert.deepEqual(record, persisted);
+  assert.doesNotMatch(JSON.stringify(record), /-100\d{6,}/);
 });
 
 // A malformed record must not be read as "nothing delivered yet" — that would
@@ -34,8 +49,13 @@ test('loadDeliveryRecord treats a missing file as empty', () => {
 
 test('saveDeliveryRecord then loadDeliveryRecord round-trips', () => {
   const path = tempPath('delivered.json');
-  saveDeliveryRecord({ '2026-09': ['fridays'] }, path);
-  assert.deepEqual(loadDeliveryRecord(path), { '2026-09': ['fridays'] });
+  saveDeliveryRecord(
+    { '2026-09': { test: { fridays: { status: 'delivered', claimId: 'run-1' } } } },
+    path,
+  );
+  assert.deepEqual(loadDeliveryRecord(path), {
+    '2026-09': { test: { fridays: { status: 'delivered', claimId: 'run-1' } } },
+  });
   assert.match(readFileSync(path, 'utf8'), /2026-09/);
 });
 
