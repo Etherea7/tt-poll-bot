@@ -258,12 +258,38 @@ holiday source. Deferred work is listed explicitly in `tasks.md`.
   This is why the verification forms the merge on a clean checkout rather than
   trusting the worktree the code was written in.
 
+- **Attempt 4 — nested worktree broke lint on the destination.** Prediction:
+  gates green on a fresh checkout would be green on merged `main`. Observed:
+  `npm run lint` exit 1 on `main` while tests and typecheck passed. First
+  hypothesis (residual CRLF in the pre-existing checkout) was tested by forcing
+  a re-checkout with `git rm --cached -r . && git reset --hard`; lint still
+  failed, so the hypothesis was wrong. Inspecting the actual failing path
+  showed Biome was linting the feature worktree nested at
+  `.claude/worktrees/`, including its own `node_modules` and config copies. The
+  excludes listed `.worktrees` — the path raw `git worktree` uses — but this
+  session's native facility places worktrees under `.claude/worktrees/`, and
+  `vcs.enabled` was `false`, so gitignoring the path did not help because Biome
+  was not reading `.gitignore`. Change: enable `vcs.useIgnoreFile` and add an
+  explicit `!**/.claude` exclude. Result: lint exit 0, "Checked 12 files"
+  rather than the whole nested tree. Committed as `4dc7877`.
+
+## Merge record
+
+- merge commit: `28ce65f` — `feature/001-monthly-telegram-polls` into `main`
+  with `--no-ff`, after explicit owner confirmation for this exact merge.
+- follow-up fix on `main`: `4dc7877` (lint scope, see loop log attempt 4).
+- destination gates verified on the merged tree at 2026-08-01T12:15:50Z:
+  `npm test` exit 0 (26/26), `npm run lint` exit 0, `npm run typecheck` exit 0,
+  preview exit 0.
+- pushed: `origin/main` at `4dc7877`, confirmed with `git ls-remote`.
+
 ## Feature handback
 
-- state: implementation complete for this increment; awaiting merge decision
-- scope delivered: R1-R3, R5, R7-R10, R16, R34-R41 (pure domain layer)
+- state: **increment complete and merged**
+- scope delivered: R1-R3, R5, R7-R10, R16, R34-R41 (pure domain layer),
+  merged to `main` and pushed
 - scope explicitly deferred: holiday source, snapshot staleness check, delivery
   record, Telegram client, coordinator, GitHub Actions workflow — T5-T10 in
-  `tasks.md`
-- next action: owner confirmation to merge `feature/001-monthly-telegram-polls`
-  into protected `main`
+  `tasks.md`. Nothing can post to Telegram yet; a non-preview run exits 2.
+- next action: T5 and T6 — the data.gov.sg holiday source, committed snapshot
+  fallback, and the CI staleness check (R6, R14, R15, R17)
