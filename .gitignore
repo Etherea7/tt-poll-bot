@@ -1,0 +1,20 @@
+# Dependencies
+node_modules/
+
+# Workflow isolation (wf-feature / wf-debug worktrees)
+.worktrees/
+
+# Local secrets — never commit a bot token or chat identifier
+.env
+.env.*
+!.env.example
+
+# Logs and scratch
+*.log
+npm-debug.log*
+.tmp/
+coverage/
+
+# OS noise
+.DS_Store
+Thumbs.db

@@ -1,0 +1,22 @@
+{
+  "name": "tt-tele-poll",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Monthly Telegram availability polls for Singapore Fridays, Saturdays and public holidays",
+  "engines": {
+    "node": ">=24.12.0"
+  },
+  "scripts": {
+    "test": "node --test",
+    "lint": "biome check .",
+    "format": "biome format --write .",
+    "typecheck": "tsc --noEmit",
+    "preview": "node src/main.ts --preview"
+  },
+  "devDependencies": {
+    "typescript": "^7.0.2",
+    "@biomejs/biome": "^2.5.6",
+    "@types/node": "^24.13.3"
+  }
+}
