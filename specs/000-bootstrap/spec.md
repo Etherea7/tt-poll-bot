@@ -1,7 +1,7 @@
 ---
 id: 000-bootstrap
 title: Bootstrap tt-tele-poll
-status: in-progress
+status: done
 created: 2026-08-01
 updated: 2026-08-01
 parent: null
@@ -80,12 +80,23 @@ development loop exists.
 
 ## Acceptance criteria
 
-- [ ] AC1 (R1): the documented first outcome runs locally as specified.
-- [ ] AC2 (R2): the structural checker passes with no unresolved markers.
-- [ ] AC3 (R3): checklist evidence shows every applicable dev-loop gate green
-  before the initial commit hash.
-- [ ] AC4 (R4): initial commits exist only on `setup/000-bootstrap` until an
-  exact protected-branch action is confirmed.
-- [ ] AC5 (R5): `package.json` declares no runtime dependencies and no build
-  script, and no bundler or transpiler is present.
-- [ ] AC6 (R6): a file containing a TypeScript `enum` fails `npm run typecheck`.
+- [x] AC1 (R1): the documented first outcome runs locally as specified.
+  Evidence: `npm test` exit 0 (2 pass) and `npm run preview` exit 0 printing
+  the four August 2026 Fridays.
+- [x] AC2 (R2): the structural checker passes with no unresolved markers.
+  Evidence: `check-bootstrap.mjs` → "PASS (9 files checked)", exit 0.
+- [x] AC3 (R3): checklist evidence shows every applicable dev-loop gate green
+  before the initial commit hash. Evidence: all gates carry a timestamped exit
+  status observed between 11:03:37Z and 11:03:42Z on 2026-08-01; the scaffold
+  commit `fb9f6da` was created afterwards.
+- [x] AC4 (R4): initial commits exist only on `setup/000-bootstrap` until an
+  exact protected-branch action is confirmed. Evidence: `fb9f6da` is on
+  `setup/000-bootstrap`; `main` still points at `78bc6c0`.
+- [x] AC5 (R5): `package.json` declares no runtime dependencies and no build
+  script, and no bundler or transpiler is present. Evidence: `npm ls --depth=0`
+  lists only `@biomejs/biome`, `@types/node`, `typescript` as devDependencies;
+  no `dependencies` field and no `build` script exist.
+- [x] AC6 (R6): a file containing a TypeScript `enum` fails `npm run typecheck`.
+  Evidence: `error TS1294: This syntax is not allowed when 'erasableSyntaxOnly'
+  is enabled`, exit 1; Node also refused the same file at runtime. Probe
+  deleted.

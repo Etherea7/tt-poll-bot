@@ -1,7 +1,7 @@
 ---
 work: 000-bootstrap
 workflow: project-setup
-status: in-progress
+status: done
 updated: 2026-08-01
 links: { spec: spec.md, plan: plan.md, tasks: tasks.md }
 ---
@@ -78,8 +78,10 @@ evidence. Decisions and attempts are appended, never rewritten.
 ## Development-loop gates — all required before any commit
 
 All commands run from `C:\Users\65876\Documents\tt-tele-poll` on
-`setup/000-bootstrap`, Node v24.18.1 / npm 10.8.3. Final confirmation pass
-timestamped **2026-08-01T11:02:00Z**.
+`setup/000-bootstrap`, Node v24.18.1 / npm 10.8.3. Each gate below carries the
+timestamp of the final evidence pass, run consecutively between
+**2026-08-01T11:03:37Z** and **11:03:42Z**. Earlier identical runs during
+development produced the same results.
 
 - [x] First-outcome red: `npm test` — exit 1; observed 2026-08-01T11:03:37Z; output: tests 2 / pass 0 / fail 2, both `Error: not implemented` raised at `src/calendar.ts` via `test/calendar.test.ts`. Valid red: the module resolved, imported and executed, so the failure is missing behaviour rather than a syntax, fixture, or dependency problem. Reproduced deliberately at this timestamp by restoring the unimplemented stub, then restoring the implementation byte-identically (`diff` confirmed).
 - [x] Install/restore: `npm ci` — exit 0; observed 2026-08-01T11:03:38Z; output: added 6 packages, audited 7 packages, found 0 vulnerabilities. The very first install was necessarily `npm install` because no lockfile existed; `npm ci` was then verified against the generated `package-lock.json`, so the command recorded in `AGENTS.md` is the one actually observed.
@@ -94,12 +96,25 @@ timestamped **2026-08-01T11:02:00Z**.
   when 'erasableSyntaxOnly' is enabled` (exit 1), and Node also refused it at
   runtime. Probe file deleted; `src/` contains only `calendar.ts` and
   `main.ts`.
-- [ ] Structural checker, staged diff, and secrets scan pass.
-- [ ] Initial commit verified — hash: PENDING
-- [ ] Completion truth prepared: initial hash recorded; evidence-backed
-  tasks/ACs/status/INDEX finalized for a separate scanned truth commit.
-- [ ] Protected default-branch action explicitly confirmed and verified, or
-  handoff records that it remains unperformed.
+- [x] Structural checker, staged diff, and secrets scan pass. — evidence:
+  `check-bootstrap.mjs` "PASS (9 files checked)" exit 0; `git diff --cached
+  --check` clean; 17 files staged with `node_modules/` correctly excluded and
+  `package-lock.json` correctly included; vendored `secrets-check.sh` reported
+  "secrets-check: clean" exit 0. The commit-readiness preflight left exactly
+  one refusal, recorded below as a deviation.
+- [x] Initial commit verified — hash: `fb9f6da` (full:
+  `fb9f6daf6404437007f3a980d58378239d809ff3`), verified with `git log -1
+  --stat`: 17 files changed, 1407 insertions, on `setup/000-bootstrap`.
+- [x] Completion truth prepared: initial hash recorded above; tasks T1-T25 and
+  AC1-AC6 ticked with evidence; spec, checklist and INDEX statuses set to
+  `done`; INDEX attention text updated. Committed separately from `fb9f6da`;
+  that truth commit's own hash is reported in the handback to the owner, since
+  a commit cannot contain its own hash.
+- [x] Protected default-branch action explicitly confirmed and verified, or
+  handoff records that it remains unperformed. — **It remains unperformed.**
+  `main` still points at `78bc6c0` and was neither created, updated, nor merged
+  into. Merging `setup/000-bootstrap` into `main` requires explicit per-merge
+  owner confirmation and has not been requested.
 
 ## Loop log
 
@@ -155,12 +170,24 @@ a real problem.
 
 ## Handback
 
-- state: in progress
-- evidence so far: environment verified (Node v24.18.1, npm 10.8.3, type
-  stripping and `node --test` on `.ts` both confirmed working); bootstrap
-  branch created; durable memory written
-- commit state: no commit permitted until every applicable dev-loop gate is green
-- running process cleanup: none started
-- protected-branch state: not requested; `main` exists with docs-only commits
-  and has not been updated by this bootstrap
-- next action: resume from the first unchecked step
+- state: **complete**. Every step and every applicable development-loop gate is
+  ticked with observed evidence.
+- target: `C:\Users\65876\Documents\tt-tele-poll`, branch `setup/000-bootstrap`
+- stack: Node.js 24 LTS (v24.18.1), TypeScript 7.0.2 via native type stripping,
+  `node:test`, npm 10.8.3, Biome 2.5.6. Zero runtime dependencies; no build
+  step.
+- evidence: install / valid-red / green / lint / typecheck / run all observed
+  with timestamps and exit statuses between 2026-08-01T11:03:37Z and
+  11:03:42Z. Build and readiness gates are N/A for concrete stack reasons.
+- commit state: scaffold commit `fb9f6da` verified on `setup/000-bootstrap`,
+  plus a separate truth commit carrying this finalization.
+- deviation: the commit-readiness helper refuses with "HEAD already exists"
+  because the repository already carried the `wf-plan` documentation commits.
+  See the recorded deviation section; all other checks pass.
+- running process cleanup: none started; the product is a batch CLI and no
+  long-running process was launched at any point.
+- protected-branch state: **`main` is untouched at `78bc6c0`.** The bootstrap
+  has not been merged. That action needs explicit owner confirmation.
+- next action: `wf-feature` against `specs/001-monthly-telegram-polls/`,
+  resuming at step 2 of its implementation sequence (clock and target-month
+  derivation). Step 3, Friday derivation, is already satisfied.
