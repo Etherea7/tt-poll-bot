@@ -97,6 +97,28 @@ that members can respond before the month begins.
 - R13. The system SHALL accept destinations only from runtime configuration and
   SHALL provide no code path that adds a destination from Telegram input.
 
+### Poll wording and time slots
+
+- R34. The Friday poll question SHALL be
+  `Friday TT Sessions @ marymount/bishan/northeast/tampines`.
+- R35. The Saturday poll question SHALL be
+  `Saturday TT Sessions @ marymount/bishan/central/northeast`.
+- R36. The holiday poll question SHALL be `Public Holiday TT Sessions`, with no
+  venue list.
+- R37. Friday and holiday poll options SHALL render a date as day-of-month
+  followed by abbreviated month, without a leading zero — for example `6 Sep`.
+- R38. Saturday poll options SHALL render as the R37 date, a comma and space,
+  then the time slot — for example `6 Sep, 10am-12pm` — producing one option
+  per date-and-slot combination, ordered by date and then by slot start time.
+- R39. The Saturday time slots SHALL be configuration, not code, defaulting to
+  `10am-12pm` and `7-9pm`, so slots can be changed without a code change.
+- R40. The Saturday poll SHALL set `allow_adding_options` to true so group
+  members can add slots the configuration does not yet cover.
+- R41. WHEN the Saturday date-and-slot combinations for a target month would
+  exceed the Telegram maximum answer-option count, the system SHALL exit
+  non-zero before sending and SHALL report the count and the limit, rather than
+  truncating the option list.
+
 ### Holiday source
 
 - R14. The system SHALL attempt to read holiday data from the authoritative
@@ -226,6 +248,31 @@ that members can respond before the month begins.
   Telegram maximum of 12 answer options per poll; a worst-case month yields 13
   candidate dates).
 
+- 2026-08-01 Poll questions and option formats fixed by the owner: Friday and
+  Saturday questions name their venue lists, the holiday question is generic
+  because the venue is decided in chat once availability is known, dates render
+  as `6 Sep`, and Saturday options combine date and slot as `6 Sep, 10am-12pm`.
+  The comma separator was chosen over the literal `<Date>-<Time>` to avoid the
+  double hyphen in `6 Sep-10-12pm`, and `10am-12pm` over `10-12pm` to remove
+  the am/pm ambiguity.
+- 2026-08-01 Saturday time slots default to `10am-12pm` and `7-9pm` and live in
+  configuration (owner; rationale: slots are expected to change more often than
+  code).
+- 2026-08-01 **Correction to an earlier assessment.** This spec previously
+  assumed Telegram could not let voters add poll options. That was wrong: Bot
+  API 9.6 (2026-04-03) added the `allow_adding_options` parameter to
+  `sendPoll`, in a release containing extensive poll changes. The Saturday poll
+  therefore sets `allow_adding_options` so members can add slots themselves
+  (R40). Whether member-added options count against the 12-option maximum is
+  not yet established from primary documentation and SHALL be confirmed against
+  the test group before any production group is configured.
+- 2026-08-01 The Saturday poll keeps the combined date-and-slot option format
+  (owner). Recorded trade-off: options grow as dates × slots, so a 5-Saturday
+  month with the two default slots produces 10 options against a maximum of 12.
+  A third configured slot would exceed the maximum in any 5-Saturday month.
+  R41 makes that condition a loud pre-send failure rather than silent
+  truncation.
+
 ## Acceptance criteria
 
 - [ ] AC1 (R1): Given a run date of 2026-08-25 in `Asia/Singapore` and no month
@@ -317,6 +364,22 @@ that members can respond before the month begins.
   destination identifier is present.
 - [ ] AC33 (R33): Given the manual trigger, then it accepts target month,
   preview, scope, and force inputs.
+- [ ] AC34 (R34, R35, R36): Given a built poll set, then the three questions are
+  exactly the strings named in R34, R35 and R36.
+- [ ] AC35 (R37): Given the date 2026-09-06, when rendered as an option, then it
+  is `6 Sep` — no leading zero, abbreviated month.
+- [ ] AC36 (R38): Given Saturdays 5 and 12 Sep 2026 and slots `10am-12pm` and
+  `7-9pm`, when the Saturday poll is built, then its options are exactly
+  `5 Sep, 10am-12pm`, `5 Sep, 7-9pm`, `12 Sep, 10am-12pm`, `12 Sep, 7-9pm` in
+  that order.
+- [ ] AC37 (R39): Given a configuration listing three slots, when the Saturday
+  poll is built for a 4-Saturday month, then all twelve combinations are
+  produced without a code change.
+- [ ] AC38 (R40): Given a built Saturday poll payload, then it sets
+  `allow_adding_options` true; the Friday and holiday payloads do not.
+- [ ] AC39 (R41): Given a 5-Saturday month and three configured slots (15
+  combinations), when a run executes, then it exits non-zero before any
+  Telegram request and its output names both 15 and the limit.
 
 ## Open questions
 
