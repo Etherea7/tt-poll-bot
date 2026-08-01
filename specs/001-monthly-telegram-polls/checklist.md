@@ -1,0 +1,153 @@
+---
+work: 001-monthly-telegram-polls
+workflow: plan
+status: done
+updated: 2026-08-01
+links: { spec: spec.md, plan: plan.md, tasks: tasks.md }
+---
+
+# Checklist - monthly Telegram availability polls
+
+Read on entry; resume from the first unchecked step. Every tick carries
+evidence. Decisions are appended, never rewritten.
+
+## Decisions
+
+- 2026-08-01 Official holiday source identified as the MOM-managed consolidated
+  dataset on data.gov.sg; Telegram Bot API supports the required monthly option
+  counts.
+- 2026-08-01 Chronological option ordering and concise English wording adopted
+  provisionally as locally reversible presentation defaults.
+- 2026-08-01 Q2 resolved as a static allow-list of one or more configured group
+  IDs, beginning with a test group; self-service registration remains outside
+  v1.
+- 2026-08-01 Q3 resolved as non-anonymous, multi-select availability polls.
+- 2026-08-01 Q1 resolved as GitHub Actions schedule plus manual dispatch in a
+  **private** repository. The private-repository qualifier was added after
+  verifying that the documented 60-day inactivity auto-disable for scheduled
+  workflows applies to public repositories only - the exact failure mode a
+  monthly job in a quiet repository would hit.
+- 2026-08-01 Q4 resolved as Node.js 24 LTS with TypeScript. The draft's stated
+  cost ("adds a compile/typecheck step") was found obsolete: type stripping is
+  stable from Node 24.12, so `.ts` runs directly with no build step. `tsc
+  --noEmit` is retained as a CI-only gate.
+- 2026-08-01 Q5 **superseded by owner**. Scheduled runs execute on the 25th and
+  target the *following* month, not the 1st targeting the current month.
+  Rationale: a poll posted on the 1st gives no notice and, when the 1st is
+  itself a public holiday, arrives after the date it asks about. Run time 09:17
+  `Asia/Singapore` adopted provisionally (locally reversible cron edit).
+- 2026-08-01 Q6 resolved: a covered month containing no holidays receives a
+  short informational message rather than silence.
+- 2026-08-01 Q7 resolved: gazetted plus observed substitute dates, de-duplicated
+  against the Friday and Saturday polls.
+- 2026-08-01 Q8 **closed as foreclosed**, not answered. Selecting a scheduled
+  short-lived job (Q1) means no process exists to receive Telegram updates, so
+  outbound-only is the only coherent v1 design. Q8 was never independent of Q1.
+- 2026-08-01 Q9 resolved by splitting it: transport retries (429 with
+  `retry_after`, pre-response 5xx and connection failures) are required because
+  those provably did not deliver; run-level duplicate protection is a durable
+  delivery record plus explicit month/scope/force inputs.
+- 2026-08-01 Holiday-source failure degrades rather than blocks. The draft's R8
+  would have withheld the Friday and Saturday polls - pure arithmetic that
+  cannot fail - because a third-party dataset was unreachable.
+- 2026-08-01 Three separate polls is forced by the Telegram maximum of 12
+  answer options, not chosen for style: a worst-case month yields 5 Fridays +
+  5 Saturdays + 3 holidays = 13 candidate dates.
+- 2026-08-01 Delivery record tracks poll *kinds* per month, not whole months.
+  Raised by the consistency pass - see the Consistency pass section.
+
+## Steps
+
+- [x] Create the planning artifacts. (evidence: `specs/001-monthly-telegram-polls/`
+  instantiated on 2026-08-01)
+- [x] Frame known facts and sweep open-question categories. (evidence: spec has
+  goals, non-goals, draft requirements, and Q1-Q9 across scope, permissions,
+  data, failure, integration, quality, and security/privacy)
+- [x] Clarification round 1: resolve Q1-Q4. (evidence: Q2 and Q3 resolved
+  2026-08-01; Q1 -> GitHub Actions + private repo and Q4 -> Node 24 + TypeScript
+  resolved by owner on 2026-08-01 after implications were re-verified against
+  primary sources)
+- [x] Clarification round 2: resolve Q5-Q9 in no more than four questions.
+  (evidence: four questions asked; Q5 superseded by the owner's 25th-of-month
+  proposal, Q6/Q7/Q9 answered, Q8 closed as foreclosed by Q1, plus the new
+  holiday-failure and snapshot-staleness decisions. Two rounds used of three.)
+- [x] Convert all settled decisions into testable requirements and acceptance
+  criteria. (evidence: spec.md now carries R1-R33 grouped by concern and
+  AC1-AC33, each AC naming the requirement it verifies)
+- [x] Run the eight-check consistency pass and fix all findings. (evidence: see
+  Consistency pass below; 3 findings, all fixed)
+- [x] Persist only the spec/checklist files after a staged secrets scan and
+  verify both documentation commits. (evidence: see Persistence below)
+
+## Consistency pass
+
+Run 2026-08-01 against spec.md. Result: **pass after 3 fixes**.
+
+| Check | Result |
+|---|---|
+| Every goal covered by a requirement | Pass - all six goals map to at least one of R1-R33 |
+| Every requirement testable | **Fail -> fixed** (finding 1) |
+| Every AC mapped to a requirement | Pass - AC1-AC33 each name a requirement |
+| No contradiction between decisions and requirements | **Fail -> fixed** (finding 2) |
+| No unquantified vagueness | **Fail -> fixed** (finding 3) |
+| No open question silently assumed | Pass - no questions remain open |
+| Non-goals fence the scope | Pass - inbound commands and result collection explicitly excluded |
+| Provisional defaults justified as low-stakes | Pass - ordering, wording, and run time are all reversible by editing one line |
+
+Findings and fixes:
+
+1. **Untestable requirement.** The draft's AC10 asserted that an unconfigured
+   group "cannot register itself as a destination". In an outbound-only design
+   no code path receives Telegram updates, so nothing exists to exercise - the
+   criterion tested an absence. Replaced with R13/AC13, a positive invariant a
+   test can actually fail: no code path derives a destination from a Telegram
+   response.
+2. **Contradiction between R15 and the delivery record.** R15 degrades a run
+   (send Friday and Saturday polls, skip holidays, exit non-zero) while the
+   original R22 recorded a month only on *full* success. A degraded run would
+   therefore record nothing, and the operator's recovery re-run would duplicate
+   the two polls that had already landed. Fixed by tracking delivery per poll
+   kind (R18-R23), which makes recovery self-healing with no flags to remember.
+3. **Unquantified vagueness.** R14 fell back to the snapshot when the live
+   fetch "returns unusable data". Quantified as non-2xx status, exceeding a
+   bounded attempt budget, or failing schema validation.
+
+## Verification log
+
+External claims were re-checked against primary sources rather than carried
+over from the draft. Four were wrong:
+
+| Claim in draft | Source checked | Outcome |
+|---|---|---|
+| One-option polls may not be supported | Bot API changelog | **Wrong** - minimum is 1 since Bot API 7.0 (2023-12-29); maximum is 12 since 9.1 (2025-07-03) |
+| Scheduled workflows "may be delayed" (only risk noted) | GitHub Actions docs | **Incomplete** - also auto-disabled after 60 days inactivity, public repositories only |
+| Cron must be expressed in UTC | GitHub Actions changelog, March 2026 | **Wrong** - IANA `timezone:` is now supported alongside `cron:` |
+| TypeScript "adds a compile/typecheck step" | nodejs.org/api/typescript.html | **Wrong** - type stripping stable from Node 24.12; no build step, typecheck only |
+| Holiday data is a simple fetch | data.gov.sg developer guide | **Incomplete** - two-step `initiate-download` then poll `poll-download` for a signed CSV URL, ~5 req/min unauthenticated |
+| Dataset coverage | data.gov.sg dataset page | Confirmed - consolidated dataset covers 2020-01 to 2027-12, refreshed around Q3 annually |
+
+## Loop log
+
+- No convergence failures. Two clarification rounds used of a maximum of three.
+
+## Persistence
+
+- Secrets scan run against the staged diff before committing; no token, chat
+  identifier, or credential present. The artifacts are documentation only.
+- Commit hashes recorded in the Handback section below.
+
+## Handback
+
+- state: **complete**. Spec is `status: ready` with no open questions and no
+  parked consequential decisions.
+- provisional defaults the owner may want to skim-audit: chronological option
+  ordering; concise English wording with ISO month context; 09:17
+  `Asia/Singapore` run time on the 25th. Each is reversible by editing one line
+  and none is depended on by a requirement.
+- known follow-ups for implementation, already captured in plan.md: confirm the
+  `timezone:` cron key is accepted when the workflow is first committed (UTC
+  fallback documented); avoid `enum`, `namespace` with runtime code, parameter
+  properties, and decorators under Node type stripping.
+- suggested next step for the human: run `wf-setup` to bootstrap the Node 24 +
+  TypeScript scaffold and verified dev loop, then `wf-feature` against this spec
+  following the implementation sequence in plan.md.
