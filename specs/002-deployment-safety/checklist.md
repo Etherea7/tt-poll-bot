@@ -52,7 +52,8 @@ rewrite prior predictions, decisions, or failed results.
 - [x] Observe valid reproductions before production edits — `npm test` on the
   unchanged production tree exited 1 with 100 tests, 83 pass and 17 expected
   failures; the added uncovered-holiday test separately exited 1 by rendering
-  `[message: holidays] No public holidays in May 2030.`
+  `[message: holidays] No public holidays in May 2030.` Red oracle persisted as
+  commit `3a7f0ae` after a clean equivalent secrets scan.
 - [x] Gather independent investigation evidence — two neutral explorers cited
   the state/transport and holiday/config/workflow mechanisms; both independently
   ran the unchanged baseline suite at 87/87.
@@ -145,7 +146,7 @@ rewrite prior predictions, decisions, or failed results.
 
 - state: in progress.
 - exact repro/current result: `npm test` exits 1 on the red oracle; targeted
-  uncovered test command is recorded above. Red-oracle commit pending.
+  uncovered test command is recorded above. Red-oracle commit: `3a7f0ae`.
 - attempted hypotheses and findings: attempt 1/3 in progress.
 - supported facts vs inference: code-level findings are supported; workflow
   failure recovery remains to be verified through tests and inspection.
