@@ -1,12 +1,18 @@
 ---
 work: 001-monthly-telegram-polls
-workflow: plan
-status: done
+workflow: feature
+status: in-progress
 updated: 2026-08-01
 links: { spec: spec.md, plan: plan.md, tasks: tasks.md }
 ---
 
 # Checklist - monthly Telegram availability polls
+
+> **Reconciliation, 2026-08-01.** This work item's clarification phase finished
+> (`workflow: plan`, `status: done`) and implementation then began, so the
+> frontmatter now tracks `workflow: feature`. The clarification record below is
+> preserved verbatim and is still true; the feature record is appended at the
+> end of this file. Nothing from the plan phase was rewritten.
 
 Read on entry; resume from the first unchecked step. Every tick carries
 evidence. Decisions are appended, never rewritten.
@@ -161,3 +167,103 @@ over from the draft. Four were wrong:
 - suggested next step for the human: run `wf-setup` to bootstrap the Node 24 +
   TypeScript scaffold and verified dev loop, then `wf-feature` against this spec
   following the implementation sequence in plan.md.
+
+---
+
+# Feature implementation record
+
+## Isolation
+
+- worktree: `C:\Users\65876\Documents\tt-tele-poll\.claude\worktrees\feature+001-monthly-telegram-polls`
+- branch: `feature/001-monthly-telegram-polls`
+- base branch: `main`, base commit: `07bf4cf`
+- BAILOUT_N: 3
+
+The native worktree facility places worktrees under `.claude/worktrees/`
+rather than the `.worktrees/` path named in the skill. The branch was renamed
+from the generated `worktree-feature+001-...` to `feature/001-...` to match the
+workflow contract, and `.claude/worktrees/` was added to the tracked
+`.gitignore` as part of this feature so the destination checkout stays clean.
+
+## Scope of this increment
+
+Pure domain logic only: target-month resolution, Saturday derivation, option
+rendering, and the poll builder. No network, no filesystem, no Telegram. The
+builder receives holiday dates as an argument so it does not depend on the
+holiday source. Deferred work is listed explicitly in `tasks.md`.
+
+## Gates
+
+- [x] T1 red observed, then green: target-month resolution (AC1, AC2, AC3).
+  Red 2026-08-01T11:26:40Z — 9 failures, all `Error: not implemented`.
+  Green 11:27:33Z — 12/12.
+- [x] T2 red observed, then green: Saturday derivation (AC5). Same red/green
+  runs as T1.
+- [x] T3 red observed, then green: option rendering (AC35, AC36).
+  Red 2026-08-01T11:28:53Z — 14 failures, 13 `Error: not implemented` plus the
+  overflow test correctly rejecting the stub's error. Green 11:29:58Z.
+- [x] T4 red observed, then green: poll builder (AC7-AC10, AC16, AC34, AC37-AC39).
+  Same red/green runs as T3.
+- [x] Full regression suite green — `npm test` exit 0, tests 26 / pass 26 /
+  fail 0, observed 2026-08-01T11:29:58Z and again after formatting.
+- [x] Lint and typecheck green — `npm run lint` exit 0 ("Checked 12 files, no
+  fixes applied"); `npm run typecheck` exit 0. Lint reached green on attempt 2;
+  see Feature loop log.
+- [x] Preview verified — `node src/main.ts --preview --month 2026-09 --holidays
+  2026-09-15` exit 0, rendering all three polls with the agreed questions and
+  option formats. The R41 guard was exercised live: five Saturdays with three
+  slots exited 1 with "needs 15 options, exceeding the Telegram maximum of 12".
+- [x] Docs updated — `docs/USAGE.md` covers preview invocation, what gets
+  posted, the slot ceiling and its arithmetic, and what is not built yet.
+- [x] Secrets scan and feature commit verified — `secrets-check: clean`;
+  commit `1eeae2d`, 13 files changed, 771 insertions, verified with
+  `git log -1 --stat`.
+- [x] Pre-merge verification on a clean checkout — `git merge --no-ff
+  --no-commit` formed on a disposable worktree at `main`, never in the
+  protected checkout. Secrets scan on the merged staged diff: clean. This
+  surfaced a real defect; see Feature loop log attempt 3.
+- [x] Fresh-checkout gates green, 2026-08-01T11:34:54Z — a detached worktree at
+  the feature branch (simulating a post-merge clone) ran `npm ci`, then
+  `npm test` exit 0 (26/26), `npm run lint` exit 0, `npm run typecheck` exit 0,
+  and preview exit 0.
+- [ ] Merge gate: explicit owner confirmation for the protected destination
+
+## Feature loop log
+
+- **Attempt 1 — weak oracle caught during red.** `resolveTargetMonth rejects a
+  malformed override` passed against a stub that throws unconditionally,
+  because `assert.throws` with no matcher is satisfied by any error. It would
+  have kept passing with the validation deleted. Strengthened to assert the
+  exact message for three distinct malformed inputs, so it can only pass for
+  the right reason.
+- **Attempt 2 — lint gate.** Prediction: lint would pass after implementation.
+  Observed: exit 1, six formatter-only errors, one per newly written file.
+  Change: `biome check --write`. Result: exit 0; the diff was purely
+  cosmetic line-collapsing, and tests plus typecheck were re-run green
+  afterwards to confirm no assertion changed.
+
+- **Attempt 3 — CRLF defect found by pre-merge verification.** Prediction: the
+  gates green in the feature worktree would be green on the merged tree.
+  Observed: `npm run lint` exit 1 on a clean checkout, with every file reported
+  as needing reformatting and `␍` visible in the diff. Diagnosis: Git converts
+  LF to CRLF on checkout under Windows autocrlf, so the authoring worktree
+  (files written with LF) passed while any fresh clone failed — and a Linux CI
+  runner would have passed while a Windows clone failed, hiding the defect from
+  whoever introduced it. Change: added `.gitattributes` with `* text=auto
+  eol=lf` and ran `git add --renormalize .`, which confirmed the committed
+  blobs were already LF. Result: a fresh detached checkout of the feature
+  branch passes lint, tests, typecheck and preview, all exit 0. Committed as
+  `dcf0c7d`.
+
+  This is why the verification forms the merge on a clean checkout rather than
+  trusting the worktree the code was written in.
+
+## Feature handback
+
+- state: implementation complete for this increment; awaiting merge decision
+- scope delivered: R1-R3, R5, R7-R10, R16, R34-R41 (pure domain layer)
+- scope explicitly deferred: holiday source, snapshot staleness check, delivery
+  record, Telegram client, coordinator, GitHub Actions workflow — T5-T10 in
+  `tasks.md`
+- next action: owner confirmation to merge `feature/001-monthly-telegram-polls`
+  into protected `main`

@@ -1,0 +1,11 @@
+# Normalise line endings so a fresh checkout formats identically on every OS.
+#
+# Without this, Git converts LF to CRLF when checking out on Windows, and
+# `biome check` then reports every file as needing reformatting. The authoring
+# worktree passes (its files were written with LF) while a clean clone fails —
+# and a Linux CI runner passes while a Windows machine fails. Pinning eol=lf
+# makes the formatter's view of the tree identical everywhere.
+* text=auto eol=lf
+
+# Generated; keep it out of review diffs.
+package-lock.json linguist-generated=true

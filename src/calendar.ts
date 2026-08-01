@@ -29,17 +29,30 @@ const WEEKDAY = {
  * project is "what is today's date in Singapore", and it is answered elsewhere.
  */
 export function fridaysIn(year: number, month: number): string[] {
+  return weekdaysIn(year, month, WEEKDAY.friday);
+}
+
+/**
+ * Every Saturday in the given month, ascending. See `fridaysIn` for the
+ * UTC-only rationale.
+ */
+export function saturdaysIn(year: number, month: number): string[] {
+  return weekdaysIn(year, month, WEEKDAY.saturday);
+}
+
+/** Every date in the month falling on `weekday`, ascending, as `YYYY-MM-DD`. */
+function weekdaysIn(year: number, month: number, weekday: number): string[] {
   // Day 0 of the following month is the last day of this one, which also
   // handles leap Februaries without a special case.
   const daysInMonth = new Date(Date.UTC(year, month, 0)).getUTCDate();
-  const fridays: string[] = [];
+  const dates: string[] = [];
 
   for (let day = 1; day <= daysInMonth; day++) {
     const date = new Date(Date.UTC(year, month - 1, day));
-    if (date.getUTCDay() === WEEKDAY.friday) {
-      fridays.push(date.toISOString().slice(0, 10));
+    if (date.getUTCDay() === weekday) {
+      dates.push(date.toISOString().slice(0, 10));
     }
   }
 
-  return fridays;
+  return dates;
 }
