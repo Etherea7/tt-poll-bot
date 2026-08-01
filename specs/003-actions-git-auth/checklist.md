@@ -63,7 +63,9 @@ rewrite prior predictions, decisions, or failed results.
 - [x] Verify original repro, targeted tests, and regression gates — targeted
   workflow test 3/3, full suite 98/98, lint 28 files, typecheck, and snapshot
   coverage check all exited 0.
-- [ ] Secrets-scan, commit, and persist truthful hashes
+- [x] Secrets-scan, commit, and persist truthful hashes — installed scanner
+  exited clean; verified fix commit:
+  `ca42c835110a260100f72de68bcc11f7d85c9bb8`.
 - [ ] Merge under destination policy and verify final tree
 
 ## Investigation findings
@@ -145,11 +147,11 @@ rewrite prior predictions, decisions, or failed results.
 
 ## Handback
 
-- state: implementation verified locally; commit and protected integration gate
-  remain.
+- state: implementation committed and verified locally; protected integration
+  gate remains.
 - exact repro/current result: external exit-128 reproduction is preserved above;
   deterministic local oracle at `8a80e05` exits 1 with the expected ordering
-  failure after commit verification.
+  failure, while fix commit `ca42c83` makes it pass 3/3.
 - attempted hypotheses and findings: attempt 1/3 confirmed; auth-after-fetch was
   the root cause and the smallest two-block reorder turns the oracle green.
 - supported facts vs inference: command order and failed operation are facts;
