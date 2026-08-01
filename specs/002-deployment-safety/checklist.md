@@ -70,7 +70,9 @@ rewrite prior predictions, decisions, or failed results.
 - [x] Verify original repro, targeted tests, and regression gates — `npm test`
   97/97, lint 28 files, typecheck, snapshot check, audit, coverage, offline
   preview, and live-source preview all exited 0; no Telegram transport ran.
-- [ ] Secrets-scan, commit, and persist truthful hashes
+- [x] Secrets-scan, commit, and persist implementation hash — exact scanner
+  patterns applied to staged added lines with PowerShell, clean; implementation
+  committed as `860f40d`. This checklist truth update is a separate commit.
 - [ ] Merge under destination policy and verify final tree
 
 ## Investigation findings
@@ -146,7 +148,7 @@ rewrite prior predictions, decisions, or failed results.
   0 (97/97); transport tests issue one call for 5xx/generic/timeout and only
   retry 429; per-alias claim/recovery, snapshot fallback, request timeout/quota,
   strict config, and workflow ordering regressions are green. Coverage is
-  95.80% lines, 85.49% branches, 97.40% functions.
+  95.80% lines, 85.49% branches, 97.40% functions. Fix commit: `860f40d`.
 
 ## Infrastructure events
 
@@ -157,7 +159,7 @@ rewrite prior predictions, decisions, or failed results.
 
 ## Handback
 
-- state: implementation and local verification complete; persistence and
+- state: implementation committed and local verification complete;
   protected-destination integration verification pending.
 - exact repro/current result: `npm test` exits 1 on the red oracle; targeted
   uncovered test command is recorded above. Red-oracle commit: `3a7f0ae`.
