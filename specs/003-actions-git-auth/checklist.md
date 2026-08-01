@@ -58,8 +58,11 @@ rewrite prior predictions, decisions, or failed results.
 - [x] Gather independent investigation evidence — two neutral read-only audits
   independently identified the same command-ordering mechanism and state result.
 - [x] Rank causal hypotheses and discriminating experiments
-- [ ] Resolve through bounded hypothesis loop
-- [ ] Verify original repro, targeted tests, and regression gates
+- [x] Resolve through bounded hypothesis loop — attempt 1/3 confirmed; only the
+  existing auth setup moved before fetch in both state-push blocks.
+- [x] Verify original repro, targeted tests, and regression gates — targeted
+  workflow test 3/3, full suite 98/98, lint 28 files, typecheck, and snapshot
+  coverage check all exited 0.
 - [ ] Secrets-scan, commit, and persist truthful hashes
 - [ ] Merge under destination policy and verify final tree
 
@@ -131,6 +134,10 @@ rewrite prior predictions, decisions, or failed results.
 - attempt 1/3 red observation: prediction confirmed on the unchanged workflow;
   targeted command exited 1 with 2/3 passing and the sole failure at the first
   state-push block's auth-before-fetch assertion.
+- attempt 1/3 green observation: after moving the four existing auth lines
+  before fetch in each block, the exact oracle exited 0 (3/3). Full `npm test`
+  exited 0 (98/98), `npm run lint` checked 28 files, `npm run typecheck` exited
+  0, and `npm run snapshot:check` confirmed 104 holidays through 2027-12.
 
 ## Infrastructure events
 
@@ -138,19 +145,20 @@ rewrite prior predictions, decisions, or failed results.
 
 ## Handback
 
-- state: implementation in progress.
+- state: implementation verified locally; commit and protected integration gate
+  remain.
 - exact repro/current result: external exit-128 reproduction is preserved above;
   deterministic local oracle at `8a80e05` exits 1 with the expected ordering
   failure after commit verification.
-- attempted hypotheses and findings: attempt 1/3 red prediction confirmed;
-  production workflow remains unchanged.
+- attempted hypotheses and findings: attempt 1/3 confirmed; auth-after-fetch was
+  the root cause and the smallest two-block reorder turns the oracle green.
 - supported facts vs inference: command order and failed operation are facts;
   the repaired hosted run remains to be owner-observed after merge.
-- remaining hypotheses/evidence needed: move the existing auth setup before
-  fetch in both blocks and rerun the oracle plus repository gates.
+- remaining hypotheses/evidence needed: none locally; the hosted live workflow
+  must be owner-observed after protected-main integration.
 - risks and intentionally unchanged areas: no bot token, group ID, delivery
   state, or Telegram transport will be accessed by this repair.
-- recommended next experiment or human decision: complete the red/green oracle
-  and repository verification.
+- recommended next experiment or human decision: commit and validate an exact
+  protected-main integration candidate, then request merge approval.
 - cleanup/retained state: debug worktree retained while in progress; existing
   record/002 and Claude-locked feature worktrees remain untouched.
