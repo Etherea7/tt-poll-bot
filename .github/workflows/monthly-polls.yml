@@ -104,12 +104,12 @@ jobs:
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add state/
           git commit -m 'chore(state): claim monthly polls [skip ci]'
-          git fetch origin "$GITHUB_REF_NAME"
-          git rebase "origin/$GITHUB_REF_NAME"
           basic_auth=$(printf 'x-access-token:%s' "$GITHUB_TOKEN" | base64 -w0)
           auth_key='http.https://github.com/.extraheader'
           git config "$auth_key" "AUTHORIZATION: basic $basic_auth"
           trap 'git config --unset-all "$auth_key" || true' EXIT
+          git fetch origin "$GITHUB_REF_NAME"
+          git rebase "origin/$GITHUB_REF_NAME"
           git push origin "HEAD:$GITHUB_REF_NAME"
 
       # Reaching this step proves the remote claim exists. A stale or different
@@ -148,10 +148,10 @@ jobs:
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add state/
           git commit -m 'chore(state): record delivered polls [skip ci]'
-          git fetch origin "$GITHUB_REF_NAME"
-          git rebase "origin/$GITHUB_REF_NAME"
           basic_auth=$(printf 'x-access-token:%s' "$GITHUB_TOKEN" | base64 -w0)
           auth_key='http.https://github.com/.extraheader'
           git config "$auth_key" "AUTHORIZATION: basic $basic_auth"
           trap 'git config --unset-all "$auth_key" || true' EXIT
+          git fetch origin "$GITHUB_REF_NAME"
+          git rebase "origin/$GITHUB_REF_NAME"
           git push origin "HEAD:$GITHUB_REF_NAME"
