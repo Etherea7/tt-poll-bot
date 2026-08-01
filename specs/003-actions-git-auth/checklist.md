@@ -53,7 +53,8 @@ rewrite prior predictions, decisions, or failed results.
 - [x] Observe and persist a valid reproduction before production edits —
   `node --test test/workflow.test.ts` exited 1 with 2 pass/1 fail; the new test
   failed exactly on `Push prepared delivery claims must authenticate before
-  fetching` while existing workflow tests stayed green.
+  fetching` while existing workflow tests stayed green. Red oracle commit:
+  `8a80e0556d3a591fe5183e6ce8e6f01542dcb6db`.
 - [x] Gather independent investigation evidence — two neutral read-only audits
   independently identified the same command-ordering mechanism and state result.
 - [x] Rank causal hypotheses and discriminating experiments
@@ -139,7 +140,8 @@ rewrite prior predictions, decisions, or failed results.
 
 - state: implementation in progress.
 - exact repro/current result: external exit-128 reproduction is preserved above;
-  deterministic local oracle exits 1 with the expected ordering failure.
+  deterministic local oracle at `8a80e05` exits 1 with the expected ordering
+  failure after commit verification.
 - attempted hypotheses and findings: attempt 1/3 red prediction confirmed;
   production workflow remains unchanged.
 - supported facts vs inference: command order and failed operation are facts;
