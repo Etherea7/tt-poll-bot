@@ -14,5 +14,21 @@
         "claimId": "30713284575-1"
       }
     }
+  },
+  "2026-09": {
+    "test": {
+      "fridays": {
+        "status": "claimed",
+        "claimId": "30740971659-1"
+      },
+      "saturdays": {
+        "status": "claimed",
+        "claimId": "30740971659-1"
+      },
+      "holidays": {
+        "status": "claimed",
+        "claimId": "30740971659-1"
+      }
+    }
   }
 }
