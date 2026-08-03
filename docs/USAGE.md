@@ -1,151 +1,202 @@
-# Usage
+# Usage and rollout
 
-## Configuration
+The bot is a short-lived GitHub Actions job. Preview is the default; live
+delivery is a two-phase operation that pushes durable claims before Telegram is
+contacted.
 
-| Variable | Where it lives | Purpose |
+## Runtime configuration
+
+| Variable | GitHub location | Purpose |
 |---|---|---|
-| `TELEGRAM_BOT_TOKEN` | GitHub **secret** | Bot credential. Masked in logs. Not needed for `--preview`. |
-| `TELEGRAM_GROUP_IDS` | GitHub **variable** | Comma-separated destination chat ids. |
+| `TELEGRAM_BOT_TOKEN` | Actions **secret** | BotFather token. Required only by `--live`. |
+| `TELEGRAM_DESTINATIONS` | Actions **variable** | Comma-separated `alias=chatId` allow-list. |
 
-Group ids are not credentials, so they live in a repository *variable* — out of
-git, but reviewable in the settings UI, which a secret would not be.
+Use a stable lowercase alias beginning with a letter; digits and hyphens may
+follow. For one test group:
 
-## Preview a month
-
-Preview renders the exact poll payloads a live run would send, and never
-contacts Telegram. It works without a token.
-
-```bash
-TELEGRAM_GROUP_IDS=-1001 npm run preview      # month derived from today in Singapore
-TELEGRAM_GROUP_IDS=-1001 node src/main.ts --preview --month 2026-11
+```text
+test=-1001234567890
 ```
 
-## Flags
+For multiple groups:
+
+```text
+test=-1001234567890,club=-1009876543210
+```
+
+Aliases are committed in delivery state; numeric chat IDs and the bot token are
+not. Aliases and IDs must both be unique.
+
+## CLI modes and flags
+
+Running with no mode flag is a preview. The workflow manages prepare/live mode;
+do not run `--live` locally during normal testing.
 
 | Flag | Effect |
 |---|---|
-| `--preview` | Render only; issues no Telegram request |
+| `--preview` | Explicit preview; no Telegram request or state mutation |
+| `--prepare --claim ID` | Build all payloads and write pre-send claims |
+| `--live --claim ID` | Deliver only claims owned by the same ID |
 | `--month YYYY-MM` | Override the target month |
-| `--only fridays,saturdays,holidays` | Send a subset |
-| `--force` | Resend even if the delivery record says it already went out |
-| `--offline` | Skip the live holiday fetch and use the snapshot |
-| `--slots "10am-12pm,7-9pm"` | Override the Saturday time slots |
+| `--only fridays,saturdays,holidays` | Narrow poll kinds |
+| `--to test,club` | Narrow configured destination aliases |
+| `--force` | In prepare mode only, explicitly replace selected state |
+| `--offline` | Use the committed holiday snapshot without a live fetch |
+| `--slots "10am-12pm,7-9pm"` | Override Saturday slots |
 
-## What gets posted
+Unknown, repeated, missing, and empty flags are rejected before network
+activity. `--force` should be used only after inspecting the selected group and
+kind; combine it with both `--to` and `--only` for recovery.
 
-Scheduled runs execute on the **25th** and target the **following** month, so
-members have notice before it begins — including when the 1st is itself a
-public holiday.
+### Local preview
 
-Three polls, all non-anonymous and multi-select:
+PowerShell:
 
-| Poll | Question | Options |
+```powershell
+$env:TELEGRAM_DESTINATIONS='test=-1001234567890'
+node src/main.ts --month 2026-11 --offline
+```
+
+Bash:
+
+```bash
+TELEGRAM_DESTINATIONS='test=-1001234567890' node src/main.ts --month 2026-11 --offline
+```
+
+No token is required. Omit `--offline` to exercise data.gov.sg without
+contacting Telegram.
+
+## Poll output
+
+Scheduled runs execute at 09:17 `Asia/Singapore` on the 25th and target the
+following month. Polls are non-anonymous and multi-select.
+
+| Poll | Question | Example option |
 |---|---|---|
 | Fridays | `Friday TT Sessions @ marymount/bishan/northeast/tampines` | `4 Sep` |
 | Saturdays | `Saturday TT Sessions @ marymount/bishan/central/northeast` | `5 Sep, 10am-12pm` |
 | Holidays | `Public Holiday TT Sessions` | `15 Sep` |
 
-A public holiday that falls on a Friday or Saturday appears only in that poll,
-never twice. A month with no public holidays gets a one-line message instead of
-an empty poll.
+The Saturday poll lets members add options. A holiday already represented by a
+Friday or Saturday is not repeated. A covered month with zero holidays receives
+an informational message; an uncovered year omits holiday work and exits
+non-zero rather than making a false no-holidays claim.
 
-Only the Saturday poll sets `allow_adding_options`, so members can add a slot
-the configuration does not cover. Fridays and holidays are derived dates, so
-there is nothing for a member to add.
+Saturday options are dates multiplied by configured slots. Five Saturdays and
+the two defaults produce 10 options. A third slot would produce 15 and is
+rejected before claims or Telegram requests because the Bot API limit is 12.
 
-## Time slots
+## Holiday data ingestion
 
-Slots are configuration, not code. The defaults are `10am-12pm` and `7-9pm`.
+The source is the MOM-managed consolidated public-holiday dataset on
+data.gov.sg. The adapter initiates a download, polls for a signed CSV, and then
+downloads it. Every request has a 30-second timeout. Dataset API calls are at
+least five seconds apart, matching the unauthenticated limit of two calls per
+ten seconds; HTTP 429 also honours `retry_after`.
 
-**Options grow as dates × slots.** A month with five Saturdays and two slots
-produces 10 options against Telegram's maximum of 12. A third slot in a
-five-Saturday month needs 15 and is rejected:
+The committed `data/holidays.json` snapshot is used when the live source fails,
+is invalid, or does not cover the target year. Observed dates are copied from
+MOM and never calculated: in 2022 the Labour Day substitute was Tuesday 3 May,
+not the following Monday.
 
-```
-saturdays poll for May 2026 needs 15 options, exceeding the Telegram maximum
-of 12. Reduce the configured time slots or split the poll.
-```
-
-This fails before any Telegram request rather than silently dropping sessions
-from the poll. If more slots are needed, the poll must be split — most simply,
-one poll per time slot with dates as options, which makes growth additive
-instead of multiplicative.
-
-## Public holidays
-
-Source of truth is the MOM consolidated dataset on data.gov.sg. Fetching it is
-a three-step flow — `initiate-download`, then poll `poll-download` until a
-signed URL appears, then download the CSV — rate-limited to about 5 requests a
-minute unauthenticated.
-
-`data/holidays.json` is a committed snapshot used whenever the live source
-fails, returns a non-2xx status, exceeds the poll budget, or fails schema
-validation. **The live source can never withhold the Friday and Saturday
-polls**: if neither source covers the target year, those two polls still go out
-and the run exits non-zero with the holiday poll skipped.
-
-**Observed days are taken from the dataset, never derived.** The dataset marks
-them explicitly, e.g. `2026-11-09, Deepavali (Observed)`. Do not reimplement a
-"Sunday → following Monday" rule: in 2022 Labour Day fell on Sunday 1 May,
-Monday 2 May was already Hari Raya Puasa, and MOM gazetted the substitute for
-**Tuesday 3 May**. `test/holidays.test.ts` guards this.
-
-### Keeping the snapshot fresh
+Before deployment:
 
 ```bash
-npm run snapshot:check      # fails if it does not reach 6 months ahead
-npm run snapshot:refresh    # regenerate from live, then review the diff and commit
+npm run snapshot:check
 ```
 
-The check runs in CI so staleness surfaces during ordinary development rather
-than during a scheduled run that has already lost its live source. MOM publishes
-the next year around Q3.
+The current snapshot contains 104 rows through December 2027. Refresh only when
+the check is approaching failure or MOM publishes new years:
 
-## Duplicate protection
+```bash
+npm run snapshot:refresh
+npm test
+npm run snapshot:check
+```
 
-`state/delivered.json` maps each target month to the poll kinds already
-delivered **to every destination**:
+Review the entire snapshot diff before committing it. A refresh is data
+ingestion, not an unattended workflow mutation.
+
+## At-most-once delivery state
+
+`state/delivered.json` stores month, destination alias, kind, and status:
 
 ```json
-{ "2026-11": ["fridays", "saturdays", "holidays"] }
+{
+  "2026-11": {
+    "test": {
+      "fridays": { "status": "delivered", "claimId": "12345-1" },
+      "saturdays": { "status": "claimed", "claimId": "12345-1" }
+    }
+  }
+}
 ```
 
-A run sends only the kinds not yet recorded. If all are recorded it sends
-nothing and exits 0 — a successful no-op, not a failure. `--force` overrides it.
+The monthly workflow performs this sequence:
 
-Tracking is per *kind*, not per month, so recovering from a partially failed
-run cannot duplicate a poll that already landed: just re-run, and only the
-missing kind goes out. The workflow commits this file even when the send step
-failed, for exactly that reason.
+1. Build every selected payload and write claims.
+2. Commit and push those claims.
+3. Send only work owned by that workflow's claim ID.
+4. Mark each exact alias/kind delivered after Telegram success.
+5. Commit and push delivered state even when a later send fails.
 
-## Deploying
+If step 2 fails, step 3 never runs. If Telegram or the final push has an
+ambiguous outcome, the already-pushed claim blocks future automatic delivery.
+This intentionally prefers a missed poll and operator review over a duplicate
+that splits votes.
 
-1. Create the bot with BotFather. Never put the token in a tracked file.
-2. Keep the repository **private** — scheduled workflows are auto-disabled
-   after 60 days of inactivity in *public* repositories, which is precisely the
-   failure mode of a job that runs twelve times a year.
-3. Add the bot to the test group and get that group's numeric id.
-4. Set the `TELEGRAM_BOT_TOKEN` secret and the `TELEGRAM_GROUP_IDS` variable to
-   the test group only.
-5. Dispatch the workflow manually with `preview` left **true** (the default) and
-   check the rendered output.
-6. Dispatch again with `preview` false to send for real. Verify question text,
-   options, that voters are named, and that multi-select works.
-7. Confirm `state/delivered.json` was committed, then dispatch the same month
-   again and confirm it is skipped with exit 0.
-8. Add production group ids only after review.
-9. Leave the schedule enabled last.
+### Recovering a claimed item
 
-The scheduled run fires at 09:17 Asia/Singapore on the 25th. GitHub can delay
-scheduled workflows under load; that is harmless here because the run happens
-six days before the month it describes.
+When a run reports an existing or stale claim:
+
+1. Read the month/alias/kind in `state/delivered.json`.
+2. Inspect that Telegram group to determine whether the poll or message landed.
+3. If it definitely did **not** land, manually dispatch that month with
+   `preview=false`, `to=<alias>`, `only=<kind>`, and `force=true`.
+4. If it **did** land, change only that entry from `claimed` to `delivered`,
+   preserving its `claimId`, and merge that state correction through the normal
+   protected-branch process.
+
+Never use an unscoped force retry after an ambiguous result.
+
+## Deployment and live test-group rollout
+
+1. Create a bot with BotFather and save its token outside the repository.
+2. Add the bot to a dedicated test group. Allow it to send messages and polls.
+3. Send a command addressed to the bot in the group, then use the official
+   Bot API `getUpdates` method from a private terminal session to identify the
+   group's negative numeric chat ID. Do not paste the response into an issue or
+   commit.
+4. In GitHub repository settings, add Actions secret `TELEGRAM_BOT_TOKEN` and
+   Actions variable `TELEGRAM_DESTINATIONS=test=<negative-chat-id>`.
+5. Under Actions settings, grant the workflow token read/write repository
+   permission. Ensure the default-branch rules allow the Actions bot to push
+   the small `state/` commits; the pre-send push safely stops delivery if they
+   do not.
+6. Keep only the test alias configured. Run CI and require green tests, lint,
+   typecheck, and snapshot freshness.
+7. Dispatch **Monthly polls** for a future unused month with `preview=true`.
+   Verify all wording, dates, slot combinations, deduplication, and that no
+   state file changed.
+8. Dispatch the same month with `preview=false`. Watch the workflow order:
+   prepared-claim push must succeed before **Send claimed polls** starts.
+9. In Telegram, verify exactly three items (or a no-holiday notice where
+   appropriate), named voters, multi-select, and Saturday add-option behaviour.
+10. In GitHub, verify `state/delivered.json` contains only alias `test`, all
+    expected kinds are `delivered`, and no numeric chat ID appears in the file.
+11. Dispatch the same live month again. It must report nothing to prepare/send
+    and create no duplicate Telegram item.
+12. Enable the schedule only after the replay check. Add another group later by
+    appending a new alias mapping, previewing with `to=<new-alias>`, and repeating
+    the live test for that alias before including it in scheduled runs.
+
+Also enable GitHub Actions failure notifications for the repository. A non-zero
+exit is the operator signal for uncovered holiday data, a blocked claim,
+configuration/build failure, or Telegram failure.
 
 ## Exit codes
 
 | Code | Meaning |
 |---|---|
-| 0 | Sent, previewed, or nothing left to send |
-| 1 | No holiday coverage from either source, a build failure, or a send failure |
-
-A run that exits non-zero fails the workflow, which is what surfaces the
-failure to an operator through GitHub's notification.
+| 0 | Previewed, prepared, delivered, or nothing selected remains |
+| 1 | Uncovered holiday data, stale claim, invalid input/build, or transport failure |

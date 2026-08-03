@@ -1,0 +1,34 @@
+{
+  "2026-08": {
+    "test": {
+      "fridays": {
+        "status": "delivered",
+        "claimId": "30713284575-1"
+      },
+      "saturdays": {
+        "status": "delivered",
+        "claimId": "30713284575-1"
+      },
+      "holidays": {
+        "status": "delivered",
+        "claimId": "30713284575-1"
+      }
+    }
+  },
+  "2026-09": {
+    "test": {
+      "fridays": {
+        "status": "delivered",
+        "claimId": "30740971659-1"
+      },
+      "saturdays": {
+        "status": "delivered",
+        "claimId": "30740971659-1"
+      },
+      "holidays": {
+        "status": "delivered",
+        "claimId": "30740971659-1"
+      }
+    }
+  }
+}

@@ -1,86 +1,187 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 import type { PollKind } from './polls.ts';
-
-/** Target month (`YYYY-MM`) to the poll kinds already delivered everywhere. */
-export type DeliveryRecord = Record<string, PollKind[]>;
 
 export const DELIVERY_PATH = 'state/delivered.json';
 
 const MONTH = /^\d{4}-(0[1-9]|1[0-2])$/;
+const ALIAS = /^[a-z][a-z0-9-]{0,31}$/;
+const CLAIM_ID = /^[A-Za-z0-9._-]{1,100}$/;
 const KINDS: ReadonlySet<string> = new Set(['fridays', 'saturdays', 'holidays']);
 
-/**
- * Validate parsed JSON as a delivery record.
- *
- * This file is the only thing preventing a duplicate post to a live group, so
- * a malformed one must fail loudly rather than be silently treated as empty —
- * "empty" would mean "nothing delivered yet" and re-post the whole month.
- */
+export interface DeliveryStatus {
+  readonly status: 'claimed' | 'delivered';
+  readonly claimId: string;
+}
+
+export type DeliveryRecord = Record<
+  string,
+  Record<string, Partial<Record<PollKind, DeliveryStatus>>>
+>;
+
+export interface DeliveryTarget {
+  readonly alias: string;
+  readonly kind: PollKind;
+}
+
+function parseStatus(value: unknown): DeliveryStatus {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    throw new Error('invalid delivery record: poll kind must map to a delivery status');
+  }
+  const status = (value as Record<string, unknown>).status;
+  const claimId = (value as Record<string, unknown>).claimId;
+  if (
+    (status !== 'claimed' && status !== 'delivered') ||
+    typeof claimId !== 'string' ||
+    !CLAIM_ID.test(claimId)
+  ) {
+    throw new Error('invalid delivery record: status must be claimed or delivered with a claim id');
+  }
+  return { status, claimId };
+}
+
+/** Validate state strictly; malformed state must fail closed rather than resend. */
 export function parseDeliveryRecord(value: unknown): DeliveryRecord {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) {
-    throw new Error('invalid delivery record: expected a JSON object of month to poll kinds');
+    throw new Error('invalid delivery record: expected a JSON object of month to destinations');
   }
-
   const record: DeliveryRecord = {};
-  for (const [month, kinds] of Object.entries(value as Record<string, unknown>)) {
-    if (!MONTH.test(month)) {
+  for (const [month, destinations] of Object.entries(value as Record<string, unknown>)) {
+    if (!MONTH.test(month))
       throw new Error(`invalid delivery record: "${month}" is not a YYYY-MM month`);
+    if (typeof destinations !== 'object' || destinations === null || Array.isArray(destinations)) {
+      throw new Error(`invalid delivery record: "${month}" must map to destination aliases`);
     }
-    if (!Array.isArray(kinds)) {
-      throw new Error(`invalid delivery record: "${month}" must map to an array of poll kinds`);
-    }
-
-    const parsed: PollKind[] = [];
-    for (const kind of kinds) {
-      if (typeof kind !== 'string' || !KINDS.has(kind)) {
-        throw new Error(`invalid delivery record: unknown poll kind "${String(kind)}"`);
+    const parsedDestinations: Record<string, Partial<Record<PollKind, DeliveryStatus>>> = {};
+    for (const [alias, kinds] of Object.entries(destinations as Record<string, unknown>)) {
+      if (!ALIAS.test(alias))
+        throw new Error(`invalid delivery record: "${alias}" is not a safe alias`);
+      if (typeof kinds !== 'object' || kinds === null || Array.isArray(kinds)) {
+        throw new Error(`invalid delivery record: alias "${alias}" must map to poll kinds`);
       }
-      parsed.push(kind as PollKind);
+      const parsedKinds: Partial<Record<PollKind, DeliveryStatus>> = {};
+      for (const [kind, status] of Object.entries(kinds as Record<string, unknown>)) {
+        if (!KINDS.has(kind))
+          throw new Error(`invalid delivery record: unknown poll kind "${kind}"`);
+        parsedKinds[kind as PollKind] = parseStatus(status);
+      }
+      parsedDestinations[alias] = parsedKinds;
     }
-    record[month] = parsed;
+    record[month] = parsedDestinations;
   }
-
   return record;
 }
 
-/** Read the record, treating a missing file as empty. */
 export function loadDeliveryRecord(path: string = DELIVERY_PATH): DeliveryRecord {
-  // Absent is legitimately "nothing delivered yet"; malformed is not.
   if (!existsSync(path)) return {};
   return parseDeliveryRecord(JSON.parse(readFileSync(path, 'utf8')));
 }
 
-/** Write the record, creating the directory if needed. */
+/** Atomically replace the local record so a crash preserves the previous valid state. */
 export function saveDeliveryRecord(record: DeliveryRecord, path: string = DELIVERY_PATH): void {
   mkdirSync(dirname(path), { recursive: true });
-  writeFileSync(path, `${JSON.stringify(record, null, 2)}\n`, 'utf8');
+  const temporary = `${path}.${process.pid}.tmp`;
+  writeFileSync(temporary, `${JSON.stringify(record, null, 2)}\n`, 'utf8');
+  renameSync(temporary, path);
 }
 
-/**
- * Which of the requested kinds still need sending for this month. (R19, R20)
- *
- * Per-kind rather than per-month so recovering from a partially failed run
- * cannot duplicate a poll that already landed.
- */
-export function pendingKinds(
+function statusFor(
   record: DeliveryRecord,
   month: string,
-  requested: readonly PollKind[],
-): PollKind[] {
-  const delivered = new Set<PollKind>(record[month] ?? []);
-  return requested.filter((kind) => !delivered.has(kind));
+  alias: string,
+  kind: PollKind,
+): DeliveryStatus | undefined {
+  return record[month]?.[alias]?.[kind];
 }
 
-/** Record one kind as delivered to every destination. (R23) */
+function setStatus(
+  record: DeliveryRecord,
+  month: string,
+  alias: string,
+  kind: PollKind,
+  status: DeliveryStatus,
+): DeliveryRecord {
+  return {
+    ...record,
+    [month]: {
+      ...record[month],
+      [alias]: { ...record[month]?.[alias], [kind]: status },
+    },
+  };
+}
+
+/** Claim each eligible destination/kind before a live process can issue transport. */
+export function prepareClaims(
+  record: DeliveryRecord,
+  month: string,
+  aliases: readonly string[],
+  kinds: readonly PollKind[],
+  claimId: string,
+  force: boolean,
+): { record: DeliveryRecord; claimed: DeliveryTarget[]; blocked: DeliveryTarget[] } {
+  const blocked: DeliveryTarget[] = [];
+  for (const alias of aliases) {
+    for (const kind of kinds) {
+      const current = statusFor(record, month, alias, kind);
+      if (current?.status === 'claimed' && current.claimId !== claimId && !force) {
+        blocked.push({ alias, kind });
+      }
+    }
+  }
+  // A blocked prepare is all-or-nothing. Do not leave sibling claims that an
+  // operator did not intend to create while reporting failure.
+  if (blocked.length > 0) return { record, claimed: [], blocked };
+
+  let updated = record;
+  const claimed: DeliveryTarget[] = [];
+  for (const alias of aliases) {
+    for (const kind of kinds) {
+      const current = statusFor(updated, month, alias, kind);
+      if (current?.status === 'delivered' && !force) continue;
+      if (!current || current.claimId !== claimId || current.status === 'delivered') {
+        updated = setStatus(updated, month, alias, kind, { status: 'claimed', claimId });
+      }
+      claimed.push({ alias, kind });
+    }
+  }
+  return { record: updated, claimed, blocked };
+}
+
+/** Return a sendable target only when the current run owns its durable claim. */
+export function claimsForRun(
+  record: DeliveryRecord,
+  month: string,
+  aliases: readonly string[],
+  kinds: readonly PollKind[],
+  claimId: string,
+): { sendable: DeliveryTarget[]; blocked: DeliveryTarget[]; missing: DeliveryTarget[] } {
+  const sendable: DeliveryTarget[] = [];
+  const blocked: DeliveryTarget[] = [];
+  const missing: DeliveryTarget[] = [];
+  for (const alias of aliases) {
+    for (const kind of kinds) {
+      const current = statusFor(record, month, alias, kind);
+      if (current?.status === 'delivered') continue;
+      if (!current) missing.push({ alias, kind });
+      else if (current.claimId !== claimId) blocked.push({ alias, kind });
+      else sendable.push({ alias, kind });
+    }
+  }
+  return { sendable, blocked, missing };
+}
+
+/** Mark exactly one claimed destination/kind delivered after Telegram success. */
 export function markDelivered(
   record: DeliveryRecord,
   month: string,
+  alias: string,
   kind: PollKind,
+  claimId: string,
 ): DeliveryRecord {
-  const existing = record[month] ?? [];
-  return {
-    ...record,
-    [month]: existing.includes(kind) ? [...existing] : [...existing, kind],
-  };
+  const current = statusFor(record, month, alias, kind);
+  if (current?.status === 'delivered' && current.claimId === claimId) return record;
+  if (current?.status !== 'claimed' || current.claimId !== claimId) {
+    throw new Error(`cannot mark unowned delivery claim for ${alias}/${kind}`);
+  }
+  return setStatus(record, month, alias, kind, { status: 'delivered', claimId });
 }

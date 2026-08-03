@@ -8,8 +8,8 @@ import { parseSnapshot } from './snapshot.ts';
  * Entry point.
  *
  * Scheduled runs execute on the 25th and target the following month. Manual
- * dispatch may override the month, narrow the scope, force a resend, or
- * preview without contacting Telegram.
+ * dispatch may override the month, narrow the scope, prepare durable claims,
+ * or explicitly deliver only claims owned by its run identifier.
  */
 
 const SNAPSHOT_PATH = 'data/holidays.json';
