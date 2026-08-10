@@ -3,8 +3,8 @@
 Constitution: [docs/CONSTITUTION.md](docs/CONSTITUTION.md) — read it; it binds.
 
 Monthly Telegram availability polls. On the 25th of each month the job posts
-three polls to configured Telegram groups covering the **following** month's
-Fridays, Saturdays, and Singapore public holidays.
+four polls to configured Telegram groups covering the **following** month's
+Fridays, Saturdays, Sundays, and Singapore public holidays.
 
 The behavioural source of truth is
 [`specs/001-monthly-telegram-polls/spec.md`](specs/001-monthly-telegram-polls/spec.md)
@@ -53,8 +53,12 @@ typechecker only and is configured `noEmit`; it must never produce output.
 
 - **Telegram poll options: 1–12.** Minimum dropped to 1 in Bot API 7.0; maximum
   raised to 12 in Bot API 9.1. A single-holiday month polls normally. The
-  ceiling of 12 is *why* the three date sets ship as three separate polls: a
-  worst-case month yields 5 Fridays + 5 Saturdays + 3 holidays = 13 dates.
+  ceiling of 12 is *why* the date sets ship as separate polls rather than one.
+  Four polls now go out — Fridays, Saturdays, Sundays, holidays (R42) — and
+  every one of them spends an option on the shared `cmi` answer (R43). Worst
+  observed case is 11 (5 Saturdays x 2 slots + `cmi`). A third Saturday slot
+  reaches 13 in *any* month and is refused (R41); holidays render AM/PM (R46),
+  so six non-weekend holidays in one month would also overflow.
 - **Poll text limits:** question ≤ 300 chars, each option ≤ 100 chars.
 - **Polls are non-anonymous and multi-select** (`is_anonymous: false`,
   `allows_multiple_answers: true`).

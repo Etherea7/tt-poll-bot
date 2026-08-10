@@ -38,7 +38,7 @@ do not run `--live` locally during normal testing.
 | `--prepare --claim ID` | Build all payloads and write pre-send claims |
 | `--live --claim ID` | Deliver only claims owned by the same ID |
 | `--month YYYY-MM` | Override the target month |
-| `--only fridays,saturdays,holidays` | Narrow poll kinds |
+| `--only fridays,saturdays,sundays,holidays` | Narrow poll kinds |
 | `--to test,club` | Narrow configured destination aliases |
 | `--force` | In prepare mode only, explicitly replace selected state |
 | `--offline` | Use the committed holiday snapshot without a live fetch |
@@ -73,18 +73,28 @@ following month. Polls are non-anonymous and multi-select.
 
 | Poll | Question | Example option |
 |---|---|---|
-| Fridays | `Friday TT Sessions @ marymount/bishan/northeast/tampines` | `4 Sep` |
+| Fridays | `Friday TT Sessions @ marymount/bishan/northeast/tampines, 7-10pm` | `4 Sep` |
 | Saturdays | `Saturday TT Sessions @ marymount/bishan/central/northeast` | `5 Sep, 10am-12pm` |
-| Holidays | `Public Holiday TT Sessions` | `15 Sep` |
+| Sundays | `Sunday TT Sessions @ MOE Evans, 5-7pm` | `6 Sep` |
+| Holidays | `Public Holiday TT Sessions` | `15 Sep, AM` |
+
+Every poll ends with a `cmi` option, so a member who cannot make any listed
+session is distinguishable from one who has not voted yet.
+
+The Friday and Sunday polls carry their single session time in the question, so
+their options are bare dates. The Saturday poll expands dates by configured
+slots, and the holiday poll expands each date into an `AM` and a `PM` half.
 
 The Saturday poll lets members add options. A holiday already represented by a
-Friday or Saturday is not repeated. A covered month with zero holidays receives
-an informational message; an uncovered year omits holiday work and exits
-non-zero rather than making a false no-holidays claim.
+Friday, Saturday or Sunday is not repeated. A covered month with zero holidays
+receives an informational message; an uncovered year omits holiday work and
+exits non-zero rather than making a false no-holidays claim.
 
-Saturday options are dates multiplied by configured slots. Five Saturdays and
-the two defaults produce 10 options. A third slot would produce 15 and is
-rejected before claims or Telegram requests because the Bot API limit is 12.
+The Bot API allows 12 options per poll, and `cmi` spends one of them. Five
+Saturdays and the two default slots produce 11. **A third slot no longer fits
+any month** — even a 4-Saturday month reaches 13 — and is rejected before
+claims or Telegram requests. A month would need six holidays outside Fri/Sat/Sun
+to overflow the holiday poll; no month in the committed snapshot does.
 
 ## Holiday data ingestion
 
@@ -180,8 +190,9 @@ Never use an unscoped force retry after an ambiguous result.
    state file changed.
 8. Dispatch the same month with `preview=false`. Watch the workflow order:
    prepared-claim push must succeed before **Send claimed polls** starts.
-9. In Telegram, verify exactly three items (or a no-holiday notice where
-   appropriate), named voters, multi-select, and Saturday add-option behaviour.
+9. In Telegram, verify exactly four items (or a no-holiday notice where
+   appropriate), named voters, multi-select, the trailing `cmi` option on every
+   poll, and Saturday add-option behaviour.
 10. In GitHub, verify `state/delivered.json` contains only alias `test`, all
     expected kinds are `delivered`, and no numeric chat ID appears in the file.
 11. Dispatch the same live month again. It must report nothing to prepare/send

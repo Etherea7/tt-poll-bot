@@ -1,6 +1,6 @@
 import type { PollKind } from './polls.ts';
 
-export const ALL_KINDS: readonly PollKind[] = ['fridays', 'saturdays', 'holidays'];
+export const ALL_KINDS: readonly PollKind[] = ['fridays', 'saturdays', 'sundays', 'holidays'];
 
 export interface Destination {
   readonly alias: string;

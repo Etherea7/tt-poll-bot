@@ -96,7 +96,8 @@ test('prepare persists every claim before any transport and live delivers only i
   const { fetchImpl, calls } = spyFetch();
   const outcome = await live(path, fetchImpl);
   assert.equal(outcome.exitCode, 0);
-  assert.equal(calls.filter((call) => call.method === 'sendPoll').length, 6);
+  // Four poll kinds across two destinations.
+  assert.equal(calls.filter((call) => call.method === 'sendPoll').length, 8);
   const record = JSON.parse(readFileSync(path, 'utf8')) as Record<string, unknown>;
   assert.match(JSON.stringify(record), /"delivered"/);
 });
@@ -171,7 +172,7 @@ test('force replaces only a previous claim during prepare', async () => {
   const { fetchImpl, calls } = spyFetch();
   const outcome = await live(path, fetchImpl, [], 'run-2');
   assert.equal(outcome.exitCode, 0);
-  assert.equal(calls.length, 6);
+  assert.equal(calls.length, 8);
 });
 
 test('force recovery can target only the inspected destination and kind', async () => {

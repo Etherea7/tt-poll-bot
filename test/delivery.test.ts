@@ -13,7 +13,7 @@ import {
   saveDeliveryRecord,
 } from '../src/delivery.ts';
 
-const ALL = ['fridays', 'saturdays', 'holidays'] as const;
+const ALL = ['fridays', 'saturdays', 'sundays', 'holidays'] as const;
 const tempPath = (name: string) => join(mkdtempSync(join(tmpdir(), 'ttpoll-')), name);
 
 // AC1 (R1, R2): committed state contains only aliases and independently tracks
@@ -40,9 +40,9 @@ test('parseDeliveryRecord rejects malformed state and chat ids masquerading as a
   assert.throws(
     () =>
       parseDeliveryRecord({
-        '2026-09': { test: { sundays: { status: 'claimed', claimId: 'r' } } },
+        '2026-09': { test: { mondays: { status: 'claimed', claimId: 'r' } } },
       }),
-    /sundays/i,
+    /mondays/i,
   );
   assert.throws(
     () =>
@@ -71,12 +71,13 @@ test('loadDeliveryRecord treats a missing file as empty and rejects a corrupt on
 });
 
 test('prepareClaims creates independently owned claims and preserves delivered work', () => {
+  // Four poll kinds across two destinations.
   const prepared = prepareClaims({}, '2026-11', ['test', 'club'], ALL, 'run-1', false);
-  assert.equal(prepared.claimed.length, 6);
+  assert.equal(prepared.claimed.length, 8);
   const delivered = markDelivered(prepared.record, '2026-11', 'test', 'fridays', 'run-1');
   const second = prepareClaims(delivered, '2026-11', ['test', 'club'], ALL, 'run-2', false);
   assert.equal(second.record['2026-11']?.test?.fridays?.status, 'delivered');
-  assert.equal(second.blocked.length, 5);
+  assert.equal(second.blocked.length, 7);
 });
 
 test('a blocked prepare leaves every sibling claim unchanged', () => {

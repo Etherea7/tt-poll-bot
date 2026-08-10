@@ -7,7 +7,7 @@ export const DELIVERY_PATH = 'state/delivered.json';
 const MONTH = /^\d{4}-(0[1-9]|1[0-2])$/;
 const ALIAS = /^[a-z][a-z0-9-]{0,31}$/;
 const CLAIM_ID = /^[A-Za-z0-9._-]{1,100}$/;
-const KINDS: ReadonlySet<string> = new Set(['fridays', 'saturdays', 'holidays']);
+const KINDS: ReadonlySet<string> = new Set(['fridays', 'saturdays', 'sundays', 'holidays']);
 
 export interface DeliveryStatus {
   readonly status: 'claimed' | 'delivered';

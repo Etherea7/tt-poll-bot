@@ -40,6 +40,14 @@ export function saturdaysIn(year: number, month: number): string[] {
   return weekdaysIn(year, month, WEEKDAY.saturday);
 }
 
+/**
+ * Every Sunday in the given month, ascending. See `fridaysIn` for the
+ * UTC-only rationale. (R42)
+ */
+export function sundaysIn(year: number, month: number): string[] {
+  return weekdaysIn(year, month, WEEKDAY.sunday);
+}
+
 /** Every date in the month falling on `weekday`, ascending, as `YYYY-MM-DD`. */
 function weekdaysIn(year: number, month: number, weekday: number): string[] {
   // Day 0 of the following month is the last day of this one, which also

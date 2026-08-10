@@ -114,10 +114,34 @@ that members can respond before the month begins.
   `10am-12pm` and `7-9pm`, so slots can be changed without a code change.
 - R40. The Saturday poll SHALL set `allow_adding_options` to true so group
   members can add slots the configuration does not yet cover.
-- R41. WHEN the Saturday date-and-slot combinations for a target month would
-  exceed the Telegram maximum answer-option count, the system SHALL exit
-  non-zero before sending and SHALL report the count and the limit, rather than
-  truncating the option list.
+- R41. WHEN the date-and-slot combinations for a target month would exceed the
+  Telegram maximum answer-option count, the system SHALL exit non-zero before
+  sending and SHALL report the count and the limit, rather than truncating the
+  option list.
+
+### Session poll revisions (2026-08)
+
+Owner-requested changes to poll shape. R42–R46 supersede the earlier wording
+where they conflict; the superseded text is retained above for history.
+
+- R42. The system SHALL post a fourth poll covering every Sunday in the target
+  month, with the question `Sunday TT Sessions @ MOE Evans, 5-7pm` and options
+  rendered per R37. It SHALL NOT allow adding options, and its dates SHALL
+  participate in the R7 de-duplication that keeps a date out of the holiday
+  poll.
+- R43. Every poll SHALL offer `cmi` as its final answer option, so a member who
+  cannot attend any listed session is distinguishable from one who has not yet
+  voted. This option counts against the R41 ceiling.
+- R44. The Friday poll question SHALL be
+  `Friday TT Sessions @ marymount/bishan/northeast/tampines, 7-10pm`,
+  superseding R34.
+- R45. The holiday poll question SHALL remain `Public Holiday TT Sessions`
+  (R36 unchanged), and the Saturday question SHALL remain as R35.
+- R46. Holiday poll options SHALL render one option per date-and-half-day
+  combination in the R38 shape, using the halves `AM` and `PM` — for example
+  `17 Feb, AM` — superseding the date-only rendering R37 gave the holiday poll.
+  The Friday and Sunday polls SHALL keep bare dates, because each carries a
+  single session time in its question.
 
 ### Holiday source
 
@@ -149,8 +173,8 @@ that members can respond before the month begins.
   destination/kind scope, the system SHALL replace state only for that scope so
   a verified-missing item can be retried without duplicating another group.
 - R22. WHEN a run is invoked with a scope selector naming a subset of
-  `fridays`, `saturdays`, `holidays`, the system SHALL treat only the named
-  kinds as requested.
+  `fridays`, `saturdays`, `sundays`, `holidays`, the system SHALL treat only the
+  named kinds as requested. (`sundays` added by R42.)
 - R23. BEFORE live delivery the workflow SHALL push claims, and after each
   successful Telegram response the system SHALL atomically mark that exact
   destination/kind delivered. Ambiguous outcomes SHALL remain claimed.
@@ -323,7 +347,7 @@ that members can respond before the month begins.
 - [ ] AC17 (R17): Given a committed snapshot whose latest covered month is
   three months after the check date, when the staleness check runs, then it
   exits non-zero.
-- [ ] AC18 (R18, R23): Given aliases `test` and `club`, when all three kinds are
+- [ ] AC18 (R18, R23): Given aliases `test` and `club`, when all four kinds are
   prepared and delivered, state records each alias/kind independently and
   contains neither Telegram chat ID.
 - [ ] AC19 (R23): Given `test/fridays` succeeds and `club/fridays` fails, when
@@ -366,22 +390,37 @@ that members can respond before the month begins.
   destination identifier is present.
 - [ ] AC33 (R33): Given the manual trigger, then it accepts target month,
   preview, scope, and force inputs.
-- [ ] AC34 (R34, R35, R36): Given a built poll set, then the three questions are
-  exactly the strings named in R34, R35 and R36.
+- [ ] AC34 (R44, R35, R42, R45): Given a built poll set, then the four questions
+  are exactly the strings named in R44, R35, R42 and R45.
 - [ ] AC35 (R37): Given the date 2026-09-06, when rendered as an option, then it
   is `6 Sep` — no leading zero, abbreviated month.
 - [ ] AC36 (R38): Given Saturdays 5 and 12 Sep 2026 and slots `10am-12pm` and
   `7-9pm`, when the Saturday poll is built, then its options are exactly
   `5 Sep, 10am-12pm`, `5 Sep, 7-9pm`, `12 Sep, 10am-12pm`, `12 Sep, 7-9pm` in
   that order.
-- [ ] AC37 (R39): Given a configuration listing three slots, when the Saturday
-  poll is built for a 4-Saturday month, then all twelve combinations are
-  produced without a code change.
-- [ ] AC38 (R40): Given a built Saturday poll payload, then it sets
-  `allow_adding_options` true; the Friday and holiday payloads do not.
-- [ ] AC39 (R41): Given a 5-Saturday month and three configured slots (15
-  combinations), when a run executes, then it exits non-zero before any
-  Telegram request and its output names both 15 and the limit.
+- [x] AC37 (R39): Given a configuration listing slot values other than the
+  defaults, when the Saturday poll is built, then those values are produced
+  without a code change.
+- [x] AC38 (R40): Given a built Saturday poll payload, then it sets
+  `allow_adding_options` true; the Friday, Sunday and holiday payloads do not.
+- [x] AC39 (R41): Given a 5-Saturday month and three configured slots (16
+  options with `cmi`), when a run executes, then it exits non-zero before any
+  Telegram request and its output names both 16 and the limit.
+- [x] AC40 (R42): Given September 2026, when Sundays are derived, then they are
+  6, 13, 20 and 27 September.
+- [x] AC41 (R43): Given any built poll set, then every poll's final option is
+  exactly `cmi` and no poll repeats it.
+- [x] AC42 (R46): Given holidays 15 and 16 September 2026, when the holiday poll
+  is built, then its options are `15 Sep, AM`, `15 Sep, PM`, `16 Sep, AM`,
+  `16 Sep, PM`, `cmi` in that order.
+- [x] AC43 (R42): Given September 2026, when the Sunday poll is built, then its
+  options are bare dates followed by `cmi`.
+- [x] AC44 (R43, R41): Given a 4-Saturday month and three configured slots (13
+  options with `cmi`), when the poll set is built, then it is refused and the
+  error names both 13 and the limit — three slots no longer fit any month.
+- [x] AC45 (R46, R41): Given a month with six non-weekend holidays (13 options
+  with `cmi`), when the poll set is built, then it is refused rather than
+  truncated.
 
 ## Open questions
 

@@ -18,7 +18,7 @@ on:
         type: boolean
         default: true
       only:
-        description: 'Comma-separated subset: fridays,saturdays,holidays'
+        description: 'Comma-separated subset: fridays,saturdays,sundays,holidays'
         required: false
         type: string
       to:
