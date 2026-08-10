@@ -18,15 +18,15 @@
   "2026-09": {
     "test": {
       "fridays": {
-        "status": "claimed",
+        "status": "delivered",
         "claimId": "31385637304-1"
       },
       "saturdays": {
-        "status": "claimed",
+        "status": "delivered",
         "claimId": "31385637304-1"
       },
       "holidays": {
-        "status": "claimed",
+        "status": "delivered",
         "claimId": "31385637304-1"
       }
     }
