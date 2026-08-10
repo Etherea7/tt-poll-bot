@@ -1,15 +1,19 @@
 # tt-tele-poll — Monthly Telegram Availability Polls
 
-This project posts **three availability polls** to your Telegram group(s)
+This project posts **four availability polls** to your Telegram group(s)
 automatically, once a month, without anyone having to remember to do it.
 
 On the **25th of every month**, it posts polls covering the **following** month:
 
 | Poll | Asks about |
 |---|---|
-| 🏓 **Fridays** | Every Friday next month |
+| 🏓 **Fridays** | Every Friday next month, 7-10pm |
 | 🏓 **Saturdays** | Every Saturday next month, split by time slot |
-| 🏓 **Public Holidays** | Every Singapore public holiday next month |
+| 🏓 **Sundays** | Every Sunday next month, MOE Evans 5-7pm |
+| 🏓 **Public Holidays** | Every Singapore public holiday next month, split into AM and PM |
+
+Every poll also offers a **`cmi`** option, so someone who can't make any of the
+listed dates can say so instead of leaving you guessing whether they've voted.
 
 It runs on **GitHub Actions**, which is a free robot that lives inside this
 repository and does jobs on a timer. You do not need to leave your computer on.
@@ -319,7 +323,7 @@ embarrass you.
    shows the exact polls it *would* send and contacts Telegram not at all.
 4. Read the output. Are the dates right? The wording?
 5. **Run it for real** — same steps, but **untick preview**. Then check the group:
-   - Do all three polls appear?
+   - Do all four polls appear?
    - Can you **select more than one date**? (multi-select is on)
    - Can you see **who voted**? (deliberately not anonymous, so you know who's coming)
 6. **Run it again for the same month.** It should say `already delivered` and post
@@ -422,7 +426,7 @@ Useful for testing, for seeing next month early, or for recovering from a failur
 | **Use workflow from** | Leave as `main` | Which version of the code to run |
 | **Target month (YYYY-MM)** | Usually **leave blank** | Blank = next month, worked out automatically. Type `2026-11` to force one. |
 | **Render without contacting Telegram** | ☑️ **ticked by default** | **The safety catch.** Ticked = dry run, shows the polls, sends nothing. **Untick to actually post.** |
-| **Comma-separated subset** | Usually **leave blank** | Blank = all three polls. Valid words: `fridays`, `saturdays`, `holidays`. |
+| **Comma-separated subset** | Usually **leave blank** | Blank = all four polls. Valid words: `fridays`, `saturdays`, `sundays`, `holidays`. |
 | **Comma-separated destination aliases** | Usually **leave blank** | Blank = every group. Type a nickname from `TELEGRAM_DESTINATIONS` (e.g. `test`) to send to just that one. |
 | **Explicitly replace existing delivery state** | ☐ **leave unticked** | Emergency override — see the warning below. |
 
@@ -476,11 +480,12 @@ A **preview** run uses one step; a **live** run uses four. This is normal:
 
 ```
 target month: November 2026
-[poll: fridays] Friday TT Sessions @ marymount/bishan/northeast/tampines
+[poll: fridays] Friday TT Sessions @ marymount/bishan/northeast/tampines, 7-10pm
   - 6 Nov
   - 13 Nov
   - 20 Nov
   - 27 Nov
+  - cmi
 [poll: saturdays] Saturday TT Sessions @ marymount/bishan/central/northeast
   - 7 Nov, 10am-12pm
   - 7 Nov, 7-9pm
@@ -490,16 +495,28 @@ target month: November 2026
   - 21 Nov, 7-9pm
   - 28 Nov, 10am-12pm
   - 28 Nov, 7-9pm
-[poll: holidays] Public Holiday TT Sessions
+  - cmi
+[poll: sundays] Sunday TT Sessions @ MOE Evans, 5-7pm
+  - 1 Nov
   - 8 Nov
-  - 9 Nov
+  - 15 Nov
+  - 22 Nov
+  - 29 Nov
+  - cmi
+[poll: holidays] Public Holiday TT Sessions
+  - 9 Nov, AM
+  - 9 Nov, PM
+  - cmi
 preview only — no Telegram request was made.
 ```
 
 That last line is your guarantee nothing reached Telegram.
 
 *(8 and 9 November are Deepavali and its observed holiday — Deepavali falls on a
-Sunday in 2026, so the Monday is gazetted too.)*
+Sunday in 2026, so the Monday is gazetted too. Notice that 8 November appears in
+the **Sundays** poll, not the holiday poll: a date is never asked about twice, and
+the Sundays poll got there first. Only the observed Monday is left for the holiday
+poll.)*
 
 ### A real run
 
@@ -532,8 +549,8 @@ sent nothing at all, you couldn't tell "there genuinely are no holidays" apart f
 > 🤔 **A surprise worth knowing.** December 2026 also reports *"No public
 > holidays"* — even though Christmas is obviously in December. That's correct:
 > **25 December 2026 falls on a Friday**, so it's already offered in the Fridays
-> poll. No date is ever asked about twice across the three polls. Same for a
-> holiday landing on a Saturday.
+> poll. No date is ever asked about twice across the four polls. Same for a
+> holiday landing on a Saturday or a Sunday.
 
 ### Green tick vs. red cross
 
@@ -638,8 +655,11 @@ Only two realistic causes:
 ### A note on time slots
 
 Saturday options are every **date × every time slot**, and Telegram caps a poll at
-**12 options**. Five Saturdays × two slots = 10, which fits. A third slot makes 15,
-which doesn't.
+**12 options**. The `cmi` option spends one of those twelve. Five Saturdays × two
+slots + `cmi` = 11, which fits.
+
+A **third time slot no longer fits any month**: even a four-Saturday month reaches
+4 × 3 + `cmi` = 13. Two slots is now the practical maximum.
 
 When that happens the job **refuses to send anything** rather than quietly dropping
 sessions off the end, and tells you the numbers. Fixing it means fewer slots or
@@ -712,7 +732,7 @@ The CLI has three mutually exclusive modes. `--preview` is the default.
 | `--prepare --claim <id>` | Write delivery claims for this claim id |
 | `--live --claim <id>` | Send only what this claim id durably claimed |
 | `--month YYYY-MM` | Override the target month |
-| `--only fridays,saturdays,holidays` | Restrict poll kinds |
+| `--only fridays,saturdays,sundays,holidays` | Restrict poll kinds |
 | `--to <alias,…>` | Restrict destinations by alias |
 | `--force` | Replace existing state. **Only valid with `--prepare`.** |
 | `--offline` | Skip the live holiday fetch, use the committed snapshot |
