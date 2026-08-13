@@ -4,6 +4,9 @@ import type { PollPayload } from '../src/polls.ts';
 import {
   AmbiguousDeliveryError,
   callApi,
+  editMessageText,
+  getUpdates,
+  pinChatMessage,
   redactToken,
   SupergroupMigrationError,
   sendMessage,
@@ -189,4 +192,109 @@ test('callApi errors never contain the bot token', async () => {
     assert.ok(!error.message.includes(TOKEN), 'token leaked into the error message');
     return true;
   });
+});
+
+// ---------------------------------------------------------------------------
+// Spec 004 — attendance roster transport
+// ---------------------------------------------------------------------------
+
+// AC9 (R9): Telegram assigns the poll id only on success, so it must reach the
+// caller for registration. Discarding it leaves a live poll nothing can track.
+test('sendPoll returns the Message result carrying poll and option identities', async () => {
+  const { fetchImpl } = recorder([
+    () =>
+      json({
+        ok: true,
+        result: {
+          message_id: 42,
+          poll: {
+            id: '5100',
+            question: 'Friday TT Sessions',
+            options: [
+              { text: '6 Nov', persistent_id: 'p-1' },
+              { text: 'cmi', persistent_id: 'p-2' },
+            ],
+          },
+        },
+      }),
+  ]);
+
+  const sent = await sendPoll(config(fetchImpl), '-1001', poll);
+
+  assert.equal(sent.message_id, 42);
+  assert.equal(sent.poll?.id, '5100');
+  assert.deepEqual(
+    sent.poll?.options.map((option) => option.persistent_id),
+    ['p-1', 'p-2'],
+  );
+});
+
+// R15: the roster message id must be retained so later runs can edit it.
+test('sendMessage returns the Message result', async () => {
+  const { fetchImpl } = recorder([() => json({ ok: true, result: { message_id: 77 } })]);
+  const sent = await sendMessage(config(fetchImpl), '-1001', 'roster');
+  assert.equal(sent.message_id, 77);
+});
+
+// AC1 (R1): the collection job asks for exactly the two update kinds it can
+// act on. A wider set would consume updates this bot has no handler for.
+test('getUpdates posts the offset and exactly the two allowed update types', async () => {
+  const { fetchImpl, calls } = recorder([
+    () => json({ ok: true, result: [{ update_id: 7 }, { update_id: 8 }] }),
+  ]);
+
+  const updates = await getUpdates(config(fetchImpl), 12);
+
+  assert.match(calls[0]?.url ?? '', /\/getUpdates$/);
+  assert.deepEqual(calls[0]?.body, {
+    offset: 12,
+    limit: 100,
+    timeout: 0,
+    allowed_updates: ['poll', 'poll_answer'],
+  });
+  assert.deepEqual(
+    updates.map((update) => update.update_id),
+    [7, 8],
+  );
+});
+
+// AC16, AC18 (R17, R18): roster changes are published by editing in place.
+test('editMessageText posts chat_id, message_id and text', async () => {
+  const { fetchImpl, calls } = recorder([() => json({ ok: true, result: { message_id: 42 } })]);
+  await editMessageText(config(fetchImpl), '-1001', 42, 'updated roster');
+  assert.match(calls[0]?.url ?? '', /\/editMessageText$/);
+  assert.deepEqual(calls[0]?.body, {
+    chat_id: '-1001',
+    message_id: 42,
+    text: 'updated roster',
+  });
+});
+
+// AC15 (R16): pinning must not notify the group; the roster is not news.
+test('pinChatMessage pins without a notification', async () => {
+  const { fetchImpl, calls } = recorder([() => json({ ok: true, result: true })]);
+  await pinChatMessage(config(fetchImpl), '-1001', 42);
+  assert.match(calls[0]?.url ?? '', /\/pinChatMessage$/);
+  assert.deepEqual(calls[0]?.body, {
+    chat_id: '-1001',
+    message_id: 42,
+    disable_notification: true,
+  });
+});
+
+// R18: Telegram rejects an unchanged edit. The caller decides whether to skip,
+// but a genuine "not modified" response must not crash the collection run.
+test('editMessageText surfaces a not-modified rejection as an ordinary error', async () => {
+  const { fetchImpl } = recorder([
+    () =>
+      json(
+        {
+          ok: false,
+          error_code: 400,
+          description: 'Bad Request: message is not modified',
+        },
+        400,
+      ),
+  ]);
+  await assert.rejects(editMessageText(config(fetchImpl), '-1001', 42, 'same'), /not modified/);
 });

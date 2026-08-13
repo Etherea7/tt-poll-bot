@@ -47,13 +47,80 @@ export function redactToken(text: string, token: string): string {
   return token ? text.split(token).join('«REDACTED»') : text;
 }
 
-/** Send one poll to one chat. (R11) */
+/**
+ * The subset of Telegram's objects this project reads.
+ *
+ * Deliberately structural and partial: Telegram adds fields continuously, and
+ * declaring only what is consumed keeps an unrelated API addition from becoming
+ * a type error. Field names stay in Telegram's snake_case so the shape can be
+ * compared against the published documentation without a translation step.
+ */
+export interface TelegramPollOption {
+  /** Stable across option additions and deletions; positions are not. (R5) */
+  readonly persistent_id?: string;
+  readonly text: string;
+  readonly voter_count?: number;
+}
+
+export interface TelegramPoll {
+  readonly id: string;
+  readonly question: string;
+  readonly options: readonly TelegramPollOption[];
+}
+
+export interface TelegramMessage {
+  readonly message_id: number;
+  readonly poll?: TelegramPoll;
+}
+
+export interface TelegramUser {
+  readonly id: number;
+  readonly first_name?: string;
+  readonly last_name?: string;
+  readonly username?: string;
+}
+
+export interface TelegramPollAnswer {
+  readonly poll_id: string;
+  readonly user?: TelegramUser;
+  readonly option_ids?: readonly number[];
+  readonly option_persistent_ids?: readonly string[];
+}
+
+export interface TelegramUpdate {
+  readonly update_id: number;
+  readonly poll?: TelegramPoll;
+  readonly poll_answer?: TelegramPollAnswer;
+}
+
+/**
+ * The only update kinds this bot can act on. (R1)
+ *
+ * Telegram's default set is "everything except a few", which would consume
+ * updates nothing here handles. Naming the two explicitly keeps the offset
+ * advancing only past updates the collection job understands.
+ */
+export const ALLOWED_UPDATES: readonly string[] = ['poll', 'poll_answer'];
+
+/**
+ * Telegram's per-call ceiling for `getUpdates`. The collection job pages until
+ * a call returns fewer than this, so it is exported for that comparison.
+ */
+export const UPDATE_PAGE_SIZE = 100;
+
+/**
+ * Send one poll to one chat. (R11)
+ *
+ * Returns Telegram's `Message` because the poll id is assigned here and
+ * nowhere else: discarding it would leave a live poll that no later run can
+ * resolve to a destination. (R9)
+ */
 export async function sendPoll(
   config: TelegramConfig,
   chatId: string,
   poll: PollPayload,
-): Promise<void> {
-  await callApi(config, 'sendPoll', {
+): Promise<TelegramMessage> {
+  return (await callApi(config, 'sendPoll', {
     chat_id: chatId,
     question: poll.question,
     // Bot API 7.3 changed this from strings to InputPollOption objects.
@@ -61,7 +128,7 @@ export async function sendPoll(
     is_anonymous: poll.isAnonymous,
     allows_multiple_answers: poll.allowsMultipleAnswers,
     allow_adding_options: poll.allowAddingOptions,
-  });
+  })) as TelegramMessage;
 }
 
 /** Send one plain message to one chat. (R11) */
@@ -69,8 +136,62 @@ export async function sendMessage(
   config: TelegramConfig,
   chatId: string,
   text: string,
+): Promise<TelegramMessage> {
+  return (await callApi(config, 'sendMessage', {
+    chat_id: chatId,
+    text,
+  })) as TelegramMessage;
+}
+
+/**
+ * Fetch one page of pending updates. (R1)
+ *
+ * `timeout: 0` short-polls: this runs from a scheduled job that must exit, not
+ * from a long-lived process. The caller pages until a short result arrives.
+ */
+export async function getUpdates(
+  config: TelegramConfig,
+  offset: number,
+): Promise<TelegramUpdate[]> {
+  return (await callApi(config, 'getUpdates', {
+    offset,
+    limit: UPDATE_PAGE_SIZE,
+    timeout: 0,
+    allowed_updates: ALLOWED_UPDATES,
+  })) as TelegramUpdate[];
+}
+
+/**
+ * Replace the text of an existing message. (R17)
+ *
+ * Editing reuses the message id, so the group sees no new message. Telegram
+ * rejects an edit to identical text with "message is not modified", which is
+ * why callers compare before calling. (R18)
+ */
+export async function editMessageText(
+  config: TelegramConfig,
+  chatId: string,
+  messageId: number,
+  text: string,
 ): Promise<void> {
-  await callApi(config, 'sendMessage', { chat_id: chatId, text });
+  await callApi(config, 'editMessageText', {
+    chat_id: chatId,
+    message_id: messageId,
+    text,
+  });
+}
+
+/** Pin a message without notifying the group. (R16) */
+export async function pinChatMessage(
+  config: TelegramConfig,
+  chatId: string,
+  messageId: number,
+): Promise<void> {
+  await callApi(config, 'pinChatMessage', {
+    chat_id: chatId,
+    message_id: messageId,
+    disable_notification: true,
+  });
 }
 
 interface ApiEnvelope {

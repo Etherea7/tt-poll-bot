@@ -1,9 +1,9 @@
 ---
 work: 004-attendance-roster
-workflow: plan
-status: done
+workflow: new-feature
+status: in-progress
 updated: 2026-08-14
-links: { spec: spec.md, plan: null, tasks: null }
+links: { spec: spec.md, plan: plan.md, tasks: tasks.md }
 ---
 
 # Checklist — Attendance roster from Telegram poll votes
@@ -70,6 +70,42 @@ never rewritten.
   004-attendance-roster -- spec ready, +374 lines across spec.md and
   checklist.md). Secrets scan of the staged content before committing found no
   bot token, numeric chat ID, or credential assignment.
+
+## Implementation phase (wf-feature)
+
+Planning above is complete and its ticks are preserved. Implementation resumes
+at the first unchecked step below.
+
+### Worktree
+
+- path: C:/Users/65876/Documents/tt-tele-poll/.worktrees/004-attendance-roster
+- branch: feature/004-attendance-roster
+- base branch: docs/004-attendance-roster (itself unmerged into protected main)
+- base commit: 8822565
+- destination: main (protected — merge needs explicit per-merge confirmation)
+- verified (evidence: `git rev-parse --show-toplevel` → the path above;
+  `git branch --show-current` → `feature/004-attendance-roster`;
+  `git status --short --branch` → clean at creation; `npm ci` → exit 0,
+  0 vulnerabilities).
+
+### Implementation steps
+
+- [x] F0 — isolation created and verified (evidence above).
+- [x] F1 — plan.md and tasks.md written (evidence:
+  `specs/004-attendance-roster/plan.md`, `tasks.md`).
+- [ ] F2 — T1/T2 transport: `sendPoll` returns `Message`; `getUpdates`,
+  `editMessageText`, `pinChatMessage` added.
+- [ ] F3 — T3/T4 `src/attendance.ts` state and vote application.
+- [ ] F4 — T5/T6 `src/roster.ts` projection and rendering.
+- [ ] F5 — T7/T8 `src/collect.ts` collection orchestration.
+- [ ] F6 — T9/T10 `src/run.ts` registration and roster delivery.
+- [ ] F7 — T11/T12 collection workflow.
+- [ ] F8 — T13 docs and package script.
+- [ ] F9 — T14 full gates green (`npm test`, `npm run typecheck`,
+  `npm run lint`) and diff reviewed.
+- [ ] F10 — T15 independent review via `codex:rescue`, then commit.
+- [ ] F11 — merge gate: blocked by design; destination `main` is protected and
+  the owner is unavailable.
 
 ## Loop log
 
