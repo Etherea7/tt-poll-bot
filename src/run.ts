@@ -1,6 +1,5 @@
 import type { AttendanceState, RegisteredOption } from './attendance.ts';
 import {
-  ATTENDANCE_PATH,
   emptyAttendanceState,
   loadAttendanceState,
   registerPoll,
@@ -39,23 +38,35 @@ export interface RunDeps {
   readonly now: Date;
   readonly snapshot: readonly HolidayRow[];
   readonly deliveryPath: string;
-  readonly attendancePath?: string;
+  /**
+   * Required, not defaulted: a caller that forgot it would silently write the
+   * real state file, which is how the test suite once wrote into the repo.
+   */
+  readonly attendancePath: string;
   readonly holidayFetchImpl?: typeof fetch;
   readonly telegram?: Partial<TelegramConfig>;
 }
 
 /**
- * Bind a delivered poll to its destination and option meanings. (R10)
+ * Bind a delivered poll to its destination and option meanings. (R5, R10)
  *
  * Telegram echoes the options in the order they were sent, so the payload's
- * aligned sessions supply each one's meaning. An option Telegram did not
- * return an id for is skipped rather than guessed at.
+ * aligned sessions supply each one's meaning.
+ *
+ * Returns null unless *every* option carries a persistent id. A registration
+ * missing one option is worse than no registration: the vote for it is still
+ * stored but the projection cannot see it, so that attendance silently
+ * disappears — and if a later poll update supplies the id, the option comes
+ * back with no session and a real session is filed under "Other options".
  */
-function registrationOptions(poll: PollPayload, sent: TelegramMessage): RegisteredOption[] {
+function registrationOptions(poll: PollPayload, sent: TelegramMessage): RegisteredOption[] | null {
+  const echoed = sent.poll?.options ?? [];
+  if (echoed.length === 0) return null;
+
   const options: RegisteredOption[] = [];
-  sent.poll?.options.forEach((option, index) => {
+  for (const [index, option] of echoed.entries()) {
     const persistentId = option.persistent_id;
-    if (!persistentId) return;
+    if (!persistentId) return null;
     const label = poll.options[index] ?? option.text;
     options.push({
       persistentId,
@@ -63,7 +74,7 @@ function registrationOptions(poll: PollPayload, sent: TelegramMessage): Register
       session: poll.sessions[index] ?? null,
       cmi: label === CMI_OPTION,
     });
-  });
+  }
   return options;
 }
 
@@ -184,7 +195,7 @@ export async function run(config: RunConfig, deps: RunDeps): Promise<RunOutcome>
     // R11: attendance is optional and poll delivery is not, so every attendance
     // step below is isolated. A failure degrades attendance and is reported; it
     // never resends, withholds, or delays a poll.
-    const attendancePath = deps.attendancePath ?? ATTENDANCE_PATH;
+    const attendancePath = deps.attendancePath;
     let attendance = emptyAttendanceState();
     let attendanceHealthy = true;
     const degradeAttendance = (what: string, error: unknown): void => {
@@ -222,10 +233,11 @@ export async function run(config: RunConfig, deps: RunDeps): Promise<RunOutcome>
         // and would fail state validation on the next load, so record nothing
         // rather than write state that poisons every following run.
         const pollId = sent.poll?.id;
-        if (!pollId || !Number.isSafeInteger(sent.message_id)) {
+        const options = registrationOptions(poll, sent);
+        if (!pollId || !Number.isSafeInteger(sent.message_id) || !options) {
           lines.push(
             `attendance registration skipped for ${destination.alias}/${poll.kind}: ` +
-              'Telegram returned no poll id or message id',
+              'Telegram returned no poll id, message id, or a persistent id for every option',
           );
         } else {
           recordAttendance(
@@ -235,7 +247,7 @@ export async function run(config: RunConfig, deps: RunDeps): Promise<RunOutcome>
                 month: monthKey,
                 kind: poll.kind,
                 messageId: sent.message_id,
-                options: registrationOptions(poll, sent),
+                options,
               }),
             `registration for ${destination.alias}/${poll.kind}`,
           );
@@ -275,6 +287,20 @@ export async function run(config: RunConfig, deps: RunDeps): Promise<RunOutcome>
         continue;
       }
 
+      // Pinning needs a permission the bot may not hold. The roster message is
+      // already delivered, so a failed pin is reported and never fatal — but it
+      // is recorded, because delivery never revisits a delivered roster and
+      // collection is the only thing left that can retry the pin.
+      let pinned = true;
+      try {
+        await pinChatMessage(telegram, destination.chatId, messageId);
+      } catch (error) {
+        pinned = false;
+        lines.push(
+          `roster pin failed for ${destination.alias}; collection will retry: ${describe(error)}`,
+        );
+      }
+
       recordAttendance(
         (state) => ({
           ...state,
@@ -283,19 +309,12 @@ export async function run(config: RunConfig, deps: RunDeps): Promise<RunOutcome>
             [rosterKey(destination.alias, monthKey)]: {
               messageId,
               textHash: rosterTextHash(text),
+              pinned,
             },
           },
         }),
         `roster record for ${destination.alias}`,
       );
-
-      // Pinning needs a permission the bot may not hold. The roster message is
-      // already delivered, so a failed pin is reported and never fatal.
-      try {
-        await pinChatMessage(telegram, destination.chatId, sent.message_id);
-      } catch (error) {
-        lines.push(`roster pin failed for ${destination.alias}: ${describe(error)}`);
-      }
     }
 
     lines.push(`delivered ${sentKinds.size} poll kind(s) to claimed destination(s)`);

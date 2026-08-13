@@ -107,45 +107,50 @@ test('collect resumes from the stored offset and advances it', async () => {
   });
 });
 
-// R1: a full page means more may be waiting.
-test('collect pages until a short page arrives', async () => {
+// R1: paging within one run would acknowledge page 1 on Telegram's side while
+// page 1 existed only on the ephemeral runner -- the durable copy is not pushed
+// until after this process exits. One page per run means the only offset ever
+// acknowledged is one a previous run already pushed.
+test('collect reads exactly one page per run even when the page is full', async () => {
   const full = Array.from({ length: 100 }, (_, index) => answer(index + 1, ['f-4']));
 
   await withTempState(registerPoll(emptyAttendanceState(), '5100', fridayPoll), async (path) => {
     const { fetchImpl, calls } = recorder([
       () => json({ ok: true, result: full }),
       () => json({ ok: true, result: [answer(101, ['f-4'])] }),
-      () => json({ ok: true, result: true }),
     ]);
-
-    await collect(config(path), { now: NOW, telegram: { fetchImpl } });
-
-    const getUpdatesCalls = calls.filter((call) => call.method === 'getUpdates');
-    assert.equal(getUpdatesCalls.length, 2);
-    assert.equal(getUpdatesCalls[1]?.body.offset, 101, 'second page resumes after the first');
-  });
-});
-
-// Telegram discards updates once a later offset is requested, so a page must be
-// durable before the next request acknowledges it. Otherwise a crash mid-run
-// loses votes permanently — they are not replayable after 24 hours.
-test('collect persists a page before requesting the next one', async () => {
-  const full = Array.from({ length: 100 }, (_, index) => answer(index + 1, ['f-4']));
-
-  await withTempState(registerPoll(emptyAttendanceState(), '5100', fridayPoll), async (path) => {
-    let call = 0;
-    const fetchImpl = (async () => {
-      call += 1;
-      if (call === 1) return json({ ok: true, result: full });
-      throw new TypeError('network gone');
-    }) as unknown as typeof fetch;
 
     const outcome = await collect(config(path), { now: NOW, telegram: { fetchImpl } });
 
-    assert.equal(outcome.exitCode, 1, 'the failed page must fail the run');
-    const saved = loadAttendanceState(path);
-    assert.equal(saved.offset, 101, 'the first page must already be durable');
-    assert.deepEqual(saved.votes['5100']?.['7'], ['f-4']);
+    assert.equal(
+      calls.filter((call) => call.method === 'getUpdates').length,
+      1,
+      'a second page must wait for the next run, after this one is pushed',
+    );
+    assert.equal(loadAttendanceState(path).offset, 101);
+    assert.ok(
+      outcome.lines.some((line) => /page was full/.test(line)),
+      'a full page must say more updates remain',
+    );
+  });
+});
+
+// The offset only ever advances past updates a previous run already pushed, so
+// a crash or a failed push simply re-reads them. Replaying is harmless because
+// applying an answer replaces rather than merges (R3).
+test('re-reading the same updates is idempotent', async () => {
+  await withTempState(registerPoll(emptyAttendanceState(), '5100', fridayPoll), async (path) => {
+    const replay = () =>
+      recorder([() => json({ ok: true, result: [answer(5, ['f-4'])] })]).fetchImpl;
+
+    await collect(config(path), { now: NOW, telegram: { fetchImpl: replay() } });
+    const first = loadAttendanceState(path);
+
+    // Simulate a failed push: the durable offset never advanced.
+    saveAttendanceState({ ...first, offset: 0 }, path);
+    await collect(config(path), { now: NOW, telegram: { fetchImpl: replay() } });
+
+    assert.deepEqual(loadAttendanceState(path).votes, first.votes);
   });
 });
 
@@ -169,7 +174,7 @@ test('collect ignores updates for unregistered polls and counts them', async () 
 test('collect edits the roster in place when the render changed', async () => {
   const base: AttendanceState = {
     ...registerPoll(emptyAttendanceState(), '5100', fridayPoll),
-    rosters: { [rosterKey('test', '2026-09')]: { messageId: 99, textHash: 'stale' } },
+    rosters: { [rosterKey('test', '2026-09')]: { messageId: 99, textHash: 'stale', pinned: true } },
   };
 
   await withTempState(base, async (path) => {
@@ -203,7 +208,9 @@ test('collect makes no edit when the render is unchanged', async () => {
     ]);
     const seeded: AttendanceState = {
       ...loadAttendanceState(path),
-      rosters: { [rosterKey('test', '2026-09')]: { messageId: 99, textHash: 'stale' } },
+      rosters: {
+        [rosterKey('test', '2026-09')]: { messageId: 99, textHash: 'stale', pinned: true },
+      },
     };
     saveAttendanceState(seeded, path);
     await collect(config(path), { now: NOW, telegram: { fetchImpl: first.fetchImpl } });
@@ -224,7 +231,7 @@ test('collect makes no edit when the render is unchanged', async () => {
 test('collect leaves a roster alone once its month has ended', async () => {
   const base: AttendanceState = {
     ...registerPoll(emptyAttendanceState(), '5100', fridayPoll),
-    rosters: { [rosterKey('test', '2026-09')]: { messageId: 99, textHash: 'stale' } },
+    rosters: { [rosterKey('test', '2026-09')]: { messageId: 99, textHash: 'stale', pinned: true } },
   };
 
   await withTempState(base, async (path) => {
@@ -295,4 +302,36 @@ test('a failing collection run leaves the delivery record untouched', async () =
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }
+});
+
+// Delivery marks the roster delivered before pinning and never revisits it, so
+// without a retry here a transient permission error would leave that month's
+// roster unpinned for good.
+test('collect retries a pin that failed at delivery, once', async () => {
+  const base: AttendanceState = {
+    ...registerPoll(emptyAttendanceState(), '5100', fridayPoll),
+    rosters: {
+      [rosterKey('test', '2026-09')]: { messageId: 99, textHash: 'stale', pinned: false },
+    },
+  };
+
+  await withTempState(base, async (path) => {
+    const first = recorder([
+      () => json({ ok: true, result: [answer(5, ['f-4'])] }),
+      () => json({ ok: true, result: true }),
+    ]);
+    await collect(config(path), { now: NOW, telegram: { fetchImpl: first.fetchImpl } });
+
+    assert.equal(
+      first.calls.filter((call) => call.method === 'pinChatMessage').length,
+      1,
+      'the outstanding pin must be retried',
+    );
+    assert.equal(loadAttendanceState(path).rosters['test|2026-09']?.pinned, true);
+
+    // A later run must not pin again.
+    const second = recorder([() => json({ ok: true, result: [] })]);
+    await collect(config(path), { now: NOW, telegram: { fetchImpl: second.fetchImpl } });
+    assert.equal(second.calls.filter((call) => call.method === 'pinChatMessage').length, 0);
+  });
 });

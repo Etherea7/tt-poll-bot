@@ -67,8 +67,25 @@ test('attendance workflow collects hourly', () => {
 // workflow must never overlap with itself.
 test('attendance workflow runs as a single consumer', () => {
   assert.match(attendance, /concurrency:/);
-  assert.match(attendance, /group:\s*attendance/);
   assert.match(attendance, /cancel-in-progress:\s*false/);
+});
+
+// Every workflow that writes state/ must serialise against the others, not just
+// against itself. Collection running between poll delivery and the registration
+// push would count those polls' first votes as unregistered and advance the
+// offset past them, losing them permanently.
+test('all workflows that write state share one concurrency group', () => {
+  const groupOf = (text: string) => /concurrency:\s+group:\s*(\S+)/.exec(text)?.[1];
+
+  const attendanceGroup = groupOf(attendance);
+  const monthlyGroup = groupOf(workflow);
+
+  assert.ok(attendanceGroup, 'the attendance workflow must declare a concurrency group');
+  assert.equal(
+    attendanceGroup,
+    monthlyGroup,
+    'both state-writing workflows must share a group so they cannot interleave',
+  );
 });
 
 // AC2 (R2): getUpdates and setWebhook are mutually exclusive. Nothing in this

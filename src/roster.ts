@@ -1,7 +1,6 @@
 import { createHash } from 'node:crypto';
 import type { AttendanceState, SessionRef, StoredUser } from './attendance.ts';
 import { formatMonthLabel } from './format.ts';
-import type { PollKind } from './polls.ts';
 
 /** Telegram's message ceiling. (R21) */
 export const MAX_MESSAGE_LENGTH = 4096;
@@ -25,7 +24,6 @@ const OMISSION_NOTICE =
 
 export interface SessionAttendance {
   readonly session: SessionRef;
-  readonly kind: PollKind;
   /** The option text members saw in the poll, reused verbatim. */
   readonly label: string;
   readonly attendees: readonly string[];
@@ -38,7 +36,6 @@ export interface UnresolvedAttendance {
 }
 
 export interface RosterProjection {
-  readonly alias: string;
   readonly month: string;
   readonly sessions: readonly SessionAttendance[];
   readonly unresolved: readonly UnresolvedAttendance[];
@@ -100,39 +97,60 @@ export function projectRoster(
     ([, poll]) => poll.alias === alias && poll.month === month,
   );
 
-  const voterIds = new Set<string>();
-  for (const [pollId] of relevant) {
-    for (const userId of Object.keys(state.votes[pollId] ?? {})) voterIds.add(userId);
-  }
-  const names = displayNames(state.users, voterIds);
-
   const votersOf = (pollId: string, persistentId: string): string[] => {
     const byUser = state.votes[pollId] ?? {};
     const found: string[] = [];
     for (const [userId, selection] of Object.entries(byUser)) {
-      if (selection.includes(persistentId)) found.push(names.get(userId) ?? '');
+      if (selection.includes(persistentId)) found.push(userId);
     }
-    return found.filter((name) => name !== '').sort((left, right) => left.localeCompare(right));
+    return found;
   };
 
-  const ordered: Array<{ sort: [string, string, number]; entry: SessionAttendance }> = [];
-  const unresolved: UnresolvedAttendance[] = [];
+  // Collected as user ids first. Display names cannot be resolved until the
+  // full set of *displayed* attendees is known, because R22 adds an initial
+  // only for a collision the reader can actually see — someone who picked only
+  // `cmi` is never rendered and so cannot collide with anyone.
+  const ordered: Array<{
+    sort: [string, string, number];
+    session: SessionRef;
+    label: string;
+    voters: string[];
+  }> = [];
+  const unresolvedRaw: Array<{ label: string; voters: string[] }> = [];
 
   for (const [pollId, poll] of relevant) {
     poll.options.forEach((option, index) => {
       // R12: the opt-out answer is not a session and is not shown at all.
       if (option.cmi) return;
-      const attendees = votersOf(pollId, option.persistentId);
+      const voters = votersOf(pollId, option.persistentId);
       if (!option.session) {
-        unresolved.push({ label: option.label, attendees });
+        unresolvedRaw.push({ label: option.label, voters });
         return;
       }
       ordered.push({
         sort: [option.session.date, pollId, index],
-        entry: { session: option.session, kind: poll.kind, label: option.label, attendees },
+        session: option.session,
+        label: option.label,
+        voters,
       });
     });
   }
+
+  const displayed = new Set<string>();
+  for (const entry of ordered) for (const userId of entry.voters) displayed.add(userId);
+  for (const entry of unresolvedRaw) for (const userId of entry.voters) displayed.add(userId);
+  const names = displayNames(state.users, displayed);
+
+  const render = (voters: readonly string[]): string[] =>
+    voters
+      .map((userId) => names.get(userId) ?? '')
+      .filter((name) => name !== '')
+      .sort((left, right) => left.localeCompare(right));
+
+  const unresolved: UnresolvedAttendance[] = unresolvedRaw.map((entry) => ({
+    label: entry.label,
+    attendees: render(entry.voters),
+  }));
 
   // Date first, then the order the options were registered in — which is the
   // order members saw them, and is stable when a slot label is not sortable.
@@ -143,9 +161,12 @@ export function projectRoster(
   });
 
   return {
-    alias,
     month,
-    sessions: ordered.map((item) => item.entry),
+    sessions: ordered.map((item) => ({
+      session: item.session,
+      label: item.label,
+      attendees: render(item.voters),
+    })),
     unresolved: unresolved.sort((left, right) => left.label.localeCompare(right.label)),
   };
 }

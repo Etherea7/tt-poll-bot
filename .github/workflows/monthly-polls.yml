@@ -34,8 +34,12 @@ on:
 permissions:
   contents: write
 
+# Shared with the attendance collection workflow on purpose: both write
+# state/ and push it, and collection that runs between poll delivery and the
+# registration push would treat those polls' first votes as unregistered and
+# advance past them, discarding them permanently.
 concurrency:
-  group: monthly-polls
+  group: telegram-state
   cancel-in-progress: false
 
 jobs:

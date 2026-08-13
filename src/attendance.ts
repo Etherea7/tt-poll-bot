@@ -50,6 +50,12 @@ export interface RosterRecord {
   readonly messageId: number;
   /** SHA-256 of the last text this system sent, so R18 can skip a no-op edit. */
   readonly textHash: string;
+  /**
+   * False when the roster was posted but pinning failed. Collection retries the
+   * pin; without this a transient permission error would leave that month's
+   * roster unpinned forever, since delivery never revisits a delivered roster.
+   */
+  readonly pinned: boolean;
 }
 
 export interface AttendanceState {
@@ -220,7 +226,13 @@ export function parseAttendanceState(value: unknown): AttendanceState {
     if (typeof roster.textHash !== 'string') {
       throw new Error(`invalid attendance state: roster "${key}" has no text hash`);
     }
-    parsedRosters[key] = { messageId: roster.messageId as number, textHash: roster.textHash };
+    parsedRosters[key] = {
+      messageId: roster.messageId as number,
+      textHash: roster.textHash,
+      // Records written before pin tracking existed are treated as pinned, so
+      // an upgrade does not re-pin every historical roster.
+      pinned: roster.pinned !== false,
+    };
   }
 
   return {
@@ -246,13 +258,39 @@ export function saveAttendanceState(state: AttendanceState, path: string = ATTEN
   renameSync(temporary, path);
 }
 
-/** Bind a delivered poll to its destination, month, and option meanings. (R10) */
+/**
+ * Bind a delivered poll to its destination, month, and option meanings. (R10)
+ *
+ * Any earlier poll for the same destination, month, and kind is dropped along
+ * with its votes. A forced resend produces a new poll id for work the old poll
+ * already covers; keeping both would render every session twice and split one
+ * month's attendance across two polls.
+ */
 export function registerPoll(
   state: AttendanceState,
   pollId: string,
   poll: RegisteredPoll,
 ): AttendanceState {
-  return { ...state, polls: { ...state.polls, [pollId]: poll } };
+  const superseded = Object.entries(state.polls)
+    .filter(
+      ([id, existing]) =>
+        id !== pollId &&
+        existing.alias === poll.alias &&
+        existing.month === poll.month &&
+        existing.kind === poll.kind,
+    )
+    .map(([id]) => id);
+
+  const polls: Record<string, RegisteredPoll> = {};
+  for (const [id, existing] of Object.entries(state.polls)) {
+    if (!superseded.includes(id)) polls[id] = existing;
+  }
+  const votes: Record<string, Record<string, readonly string[]>> = {};
+  for (const [id, byUser] of Object.entries(state.votes)) {
+    if (!superseded.includes(id)) votes[id] = byUser;
+  }
+
+  return { ...state, polls: { ...polls, [pollId]: poll }, votes };
 }
 
 function storeUser(

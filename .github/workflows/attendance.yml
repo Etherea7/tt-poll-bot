@@ -17,8 +17,13 @@ permissions:
 # Two concurrent `getUpdates` consumers receive HTTP 409 from Telegram, so this
 # workflow must never overlap with itself. Queue, never cancel: a cancelled run
 # could be interrupted between applying a page and pushing it.
+#
+# The group is shared with the monthly poll workflow because both write state/
+# and push it. Running concurrently, this job could consume votes for polls
+# whose registration has not been pushed yet, count them as unregistered, and
+# advance the offset past them -- losing them for good.
 concurrency:
-  group: attendance
+  group: telegram-state
   cancel-in-progress: false
 
 jobs:

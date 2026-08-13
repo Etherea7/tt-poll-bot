@@ -297,7 +297,10 @@ test('pruneAttendance drops a month more than 60 days past its end', () => {
   }).state;
   state = {
     ...state,
-    rosters: { ...state.rosters, [rosterKey('test', '2026-06')]: { messageId: 1, textHash: 'h' } },
+    rosters: {
+      ...state.rosters,
+      [rosterKey('test', '2026-06')]: { messageId: 1, textHash: 'h', pinned: true },
+    },
   };
 
   const pruned = pruneAttendance(state, '2026-08-30');
@@ -354,4 +357,31 @@ test('loadAttendanceState returns an empty state when the file is absent', () =>
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }
+});
+
+// A forced resend (`--prepare --force --only fridays --to test`) produces a new
+// poll id for the same alias, month and kind. Appending it would leave the old
+// poll registered and votable, so the roster would render every session twice
+// with attendance split across the two polls.
+test('registering a poll replaces any earlier one for the same alias, month and kind', () => {
+  let state = registerPoll(emptyAttendanceState(), 'old-poll', fridayPoll);
+  state = applyPollAnswer(state, {
+    poll_id: 'old-poll',
+    user: alice,
+    option_persistent_ids: ['p-4'],
+  }).state;
+
+  state = registerPoll(state, 'new-poll', { ...fridayPoll, messageId: 99 });
+
+  assert.deepEqual(Object.keys(state.polls), ['new-poll'], 'the superseded poll must be dropped');
+  assert.equal(state.votes['old-poll'], undefined, 'its votes must go with it');
+});
+
+test('registering a poll leaves a different kind or month untouched', () => {
+  let state = registerPoll(emptyAttendanceState(), 'fri', fridayPoll);
+  state = registerPoll(state, 'sat', { ...fridayPoll, kind: 'saturdays' });
+  state = registerPoll(state, 'fri-oct', { ...fridayPoll, month: '2026-10' });
+  state = registerPoll(state, 'fri-club', { ...fridayPoll, alias: 'club' });
+
+  assert.deepEqual(Object.keys(state.polls).sort(), ['fri', 'fri-club', 'fri-oct', 'sat']);
 });

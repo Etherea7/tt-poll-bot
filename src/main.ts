@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs';
+import { ATTENDANCE_PATH } from './attendance.ts';
 import { parseConfig } from './config.ts';
 import { DELIVERY_PATH } from './delivery.ts';
 import { run } from './run.ts';
@@ -24,6 +25,7 @@ try {
     now: new Date(),
     snapshot: snapshot.holidays,
     deliveryPath: DELIVERY_PATH,
+    attendancePath: ATTENDANCE_PATH,
     // Omitted when offline so holidays resolve from the snapshot alone.
     ...(config.offline ? {} : { holidayFetchImpl: fetch }),
   });

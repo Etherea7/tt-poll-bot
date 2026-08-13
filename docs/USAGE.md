@@ -147,13 +147,29 @@ npm run collect
 ```
 
 This contacts Telegram and is normally run only by the workflow. It reads
-updates and edits an existing roster message; it has no code path that can post
-a new message or send a poll, so it cannot disturb poll delivery. A failed run
-exits non-zero and the workflow goes red.
+updates, edits an existing roster message, and retries a pin that failed when
+the roster was first posted. It has no code path that can post a new message or
+send a poll, so it cannot disturb poll delivery. A failed run exits non-zero and
+the workflow goes red. Updates naming a poll that was never registered are
+counted and their poll IDs listed, so an operator can find the gap.
 
 `getUpdates` and `setWebhook` are mutually exclusive, and two concurrent
 consumers receive HTTP 409. Never register a webhook for this bot, and never
 run a second collector against the same token.
+
+The job reads **one page of at most 100 updates per run**, on purpose. Asking
+Telegram for a later offset is what makes it discard the updates below that
+offset, and a page held only on the Actions runner is not durable until the
+workflow pushes it. Reading a second page would acknowledge the first while it
+could still be lost to a cancelled runner or a failed push. With one page per
+run, the only offset ever acknowledged is one a previous run already pushed, so
+a crash simply re-reads the same updates — harmless, because applying a vote
+replaces rather than merges. A full page is reported and drained next run.
+
+For the same reason both workflows share the `telegram-state` concurrency
+group. If collection ran between poll delivery and the registration push, it
+would see those polls' first votes as unregistered and advance past them,
+losing them permanently.
 
 ### Attendance state
 

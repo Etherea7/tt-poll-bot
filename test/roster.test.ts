@@ -263,3 +263,26 @@ test('a roster that fits once names are dropped still renders', () => {
   assert.ok(text.length <= MAX_MESSAGE_LENGTH);
   assert.match(text, /220/);
 });
+
+// R22: the initial is added only where two *attendees* would otherwise read
+// identically. A member who only picked cmi is never displayed, so they cannot
+// be the second Alice — adding an initial for their sake exposes a distinction
+// the reader cannot see and needlessly reveals part of a surname.
+test('a name only collides with someone who is actually displayed', () => {
+  let state = registerPoll(emptyAttendanceState(), '1', fridays('test'));
+  state = vote(state, '1', { id: 1, first_name: 'Alice', last_name: 'Tan' }, ['f-cmi']);
+  state = vote(state, '1', { id: 2, first_name: 'Alice', last_name: 'Wong' }, ['f-4']);
+
+  const attendees = projectRoster(state, 'test', '2026-09').sessions[0]?.attendees ?? [];
+  assert.deepEqual(attendees, ['Alice'], 'the only displayed Alice needs no initial');
+});
+
+test('two displayed attendees sharing a first name still both get initials', () => {
+  let state = registerPoll(emptyAttendanceState(), '1', fridays('test'));
+  state = vote(state, '1', { id: 1, first_name: 'Alice', last_name: 'Tan' }, ['f-4']);
+  state = vote(state, '1', { id: 2, first_name: 'Alice', last_name: 'Wong' }, ['f-11']);
+
+  const projection = projectRoster(state, 'test', '2026-09');
+  assert.deepEqual(projection.sessions[0]?.attendees, ['Alice T.']);
+  assert.deepEqual(projection.sessions[1]?.attendees, ['Alice W.']);
+});

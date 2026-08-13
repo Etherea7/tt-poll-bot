@@ -477,12 +477,45 @@ test('no roster record is written when Telegram returns no message id', async ()
   assert.ok(outcome.lines.some((line) => /message id/i.test(line)));
 });
 
-// Tests must never write into the repository's own state directory.
-test('a run given no attendance path does not write into the repository', () => {
-  const source = readFileSync('test/run.test.ts', 'utf8');
-  assert.match(
-    source,
-    /attendancePath: join\(mkdtempSync/,
-    'the shared deps helper must supply a temporary attendance path',
+// R5, R10: a registration that silently omits an option is worse than none.
+// The vote for that option is still stored, but the projection cannot see it,
+// so the attendance vanishes; and if a later poll update supplies the id, the
+// option reappears with no session and the roster files a real session under
+// "Other options". Register all options or none.
+test('a poll with any option missing a persistent id is not registered at all', async () => {
+  const deliveryPath = tempPath();
+  const attendancePath = join(dirname(deliveryPath), 'attendance.json');
+  await prepare(deliveryPath);
+
+  const calls: string[] = [];
+  const fetchImpl = (async (input: string | URL | Request, init?: RequestInit) => {
+    const method = String(input).split('/').pop() ?? '';
+    calls.push(method);
+    const body = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>;
+    if (method === 'sendPoll') {
+      // Telegram returns an id for every option but the second.
+      const options = (body.options as Array<{ text: string }>).map((option, index) => ({
+        text: option.text,
+        ...(index === 1 ? {} : { persistent_id: `p-${index}` }),
+      }));
+      return new Response(
+        JSON.stringify({
+          ok: true,
+          result: { message_id: 5, poll: { id: 'partial-poll', options } },
+        }),
+        { status: 200 },
+      );
+    }
+    return new Response(JSON.stringify({ ok: true, result: { message_id: 6 } }), { status: 200 });
+  }) as unknown as typeof fetch;
+
+  const outcome = await run(
+    parseConfig(env(), ['--live', '--claim', 'run-1']),
+    attendanceDeps(fetchImpl, deliveryPath, attendancePath),
   );
+
+  assert.equal(outcome.exitCode, 0, 'poll delivery must be unaffected');
+  assert.equal(calls.filter((method) => method === 'sendPoll').length, 8);
+  assert.deepEqual(loadAttendanceState(attendancePath).polls, {});
+  assert.ok(outcome.lines.some((line) => /persistent id/i.test(line)));
 });
