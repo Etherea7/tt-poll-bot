@@ -1,7 +1,7 @@
 ---
 work: 004-attendance-roster
 workflow: plan
-status: awaiting-human
+status: done
 updated: 2026-08-14
 links: { spec: spec.md, plan: null, tasks: null }
 ---
@@ -63,11 +63,13 @@ never rewritten.
      job.
   5. R10 said "durably record" without naming a location. Named
      `state/attendance.json` and "before the run exits".
-- [ ] Step 6 — persist: commit `specs/004-attendance-roster/` and
-  `docs/ATTENDANCE-DECISION.md`. **Blocked pending owner confirmation:** the
-  session is on protected branch `main`, and both `AGENTS.md` and the project
-  constitution require explicit owner confirmation for each exact
-  protected-branch action. Nothing has been committed.
+- [x] Step 6 — persist: owner declined a direct commit to protected `main` and
+  directed the work to a branch. Committed to `docs/004-attendance-roster`
+  (evidence: `git log --oneline` → `a4b1ebb` docs: record attendance roster
+  decision and rejected alternatives; `de61194` docs(spec):
+  004-attendance-roster -- spec ready, +374 lines across spec.md and
+  checklist.md). Secrets scan of the staged content before committing found no
+  bot token, numeric chat ID, or credential assignment.
 
 ## Loop log
 
@@ -77,15 +79,17 @@ never rewritten.
 
 ## Handback
 
-- state: spec is complete and passes the consistency pass; `status: ready` in
-  `spec.md`. The only outstanding item is the commit.
-- blocker: committing to protected `main` needs explicit per-action owner
-  confirmation. The working tree holds `specs/004-attendance-roster/spec.md`,
-  `specs/004-attendance-roster/checklist.md`, and `docs/ATTENDANCE-DECISION.md`
-  uncommitted, plus the deletion of the untracked, superseded
-  `docs/ATTENDANCE-FEATURE-OPTIONS.md`.
-- suggested next step for the human: either confirm a docs-only commit to
-  `main`, or ask for a `docs/004-attendance-roster` branch instead. After that,
-  `wf-feature` can implement the spec, and `wf-improve` should regenerate
-  `specs/INDEX.md`, which is currently stale (it lists 000-002 and omits 003
-  and 004).
+Not a bailout — planning completed and persisted. Carried forward for whoever
+picks this up:
+
+- `docs/004-attendance-roster` is unmerged; merging it into protected `main`
+  needs a separate explicit owner confirmation.
+- `specs/INDEX.md` is stale: it lists 000-002 and omits both 003 and 004.
+  `wf-improve` regenerates it from directory truth; it is never hand-edited.
+- Two Telegram behaviours are asserted in `docs/ATTENDANCE-DECISION.md` but not
+  yet observed in the test group: that editing a pinned message produces no
+  notification, and that `poll` updates carry a populated `persistent_id` on
+  the Saturday poll. Confirm both before implementation depends on them.
+- Three provisional low-stakes defaults (Q6, Q9, Q10) are marked at their
+  requirements and should be skim-audited on review.
+- Natural next step: `wf-feature` against `specs/004-attendance-roster/spec.md`.
