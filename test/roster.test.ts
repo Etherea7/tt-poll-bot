@@ -2,7 +2,12 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import type { AttendanceState, RegisteredPoll } from '../src/attendance.ts';
 import { applyPollAnswer, emptyAttendanceState, registerPoll } from '../src/attendance.ts';
-import { MAX_MESSAGE_LENGTH, projectRoster, renderRoster } from '../src/roster.ts';
+import {
+  MAX_MESSAGE_LENGTH,
+  projectRoster,
+  RosterTooLargeError,
+  renderRoster,
+} from '../src/roster.ts';
 
 const fridays = (alias: string): RegisteredPoll => ({
   alias,
@@ -220,4 +225,41 @@ test('sessions from different polls are ordered by date then slot', () => {
       ['2026-09-11', null],
     ],
   );
+});
+
+// R21: names are dropped when the roster overflows, but counts alone can still
+// overflow — option labels may be 100 characters and members can add options.
+// Four full polls of maximum-length labels render to ~5800 characters as
+// counts. Sending that would have Telegram reject the edit every hour forever,
+// so the render refuses instead of quietly dropping sessions to fit.
+test('a roster that overflows even without names refuses to render', () => {
+  let state = emptyAttendanceState();
+  const kinds = ['fridays', 'saturdays', 'sundays', 'holidays'] as const;
+  kinds.forEach((kind, index) => {
+    state = registerPoll(state, `poll-${index}`, {
+      alias: 'test',
+      month: '2026-09',
+      kind,
+      messageId: index,
+      options: Array.from({ length: 12 }, (_, option) => ({
+        persistentId: `p-${index}-${option}`,
+        label: 'x'.repeat(100),
+        session: { date: `2026-09-0${(option % 9) + 1}`, slot: 'slot' },
+        cmi: false,
+      })),
+    });
+  });
+
+  const projection = projectRoster(state, 'test', '2026-09');
+  assert.throws(() => renderRoster(projection, { syncedAt }), RosterTooLargeError);
+});
+
+test('a roster that fits once names are dropped still renders', () => {
+  let state = registerPoll(emptyAttendanceState(), '1', fridays('test'));
+  for (let id = 1; id <= 220; id++) {
+    state = vote(state, '1', { id, first_name: `Verylongfirstname${id}` }, ['f-4']);
+  }
+  const text = renderRoster(projectRoster(state, 'test', '2026-09'), { syncedAt });
+  assert.ok(text.length <= MAX_MESSAGE_LENGTH);
+  assert.match(text, /220/);
 });

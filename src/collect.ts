@@ -90,14 +90,11 @@ export async function collect(config: CollectConfig, deps: CollectDeps): Promise
     );
     saveAttendanceState(state, config.statePath);
 
-    try {
-      const result = await publishRosters(state, config, telegram, deps.now, lines);
-      state = result.state;
-      edits = result.edits;
-      saveAttendanceState(state, config.statePath);
-    } catch (error) {
-      failure = redact(describe(error));
-    }
+    const result = await publishRosters(state, config, telegram, deps.now, lines);
+    state = result.state;
+    edits = result.edits;
+    saveAttendanceState(state, config.statePath);
+    if (result.failures.length > 0) failure = redact(result.failures.join('; '));
   }
 
   lines.push(`applied ${applied} vote update(s); ignored ${ignored} unregistered`);
@@ -112,15 +109,22 @@ export async function collect(config: CollectConfig, deps: CollectDeps): Promise
   return { exitCode: 0, lines, applied, ignored, edits };
 }
 
-/** Re-render every live roster and edit the ones whose text changed. */
+/**
+ * Re-render every live roster and edit the ones whose text changed.
+ *
+ * One roster's failure must not hide the rest: a group whose roster is
+ * unrenderable would otherwise stop every other group from updating too. Each
+ * is attempted independently and the failures are returned together.
+ */
 async function publishRosters(
   initial: AttendanceState,
   config: CollectConfig,
   telegram: TelegramConfig,
   now: Date,
   lines: string[],
-): Promise<{ state: AttendanceState; edits: number }> {
+): Promise<{ state: AttendanceState; edits: number; failures: string[] }> {
   const currentMonth = singaporeDate(now).slice(0, 7);
+  const failures: string[] = [];
   let state = initial;
   let edits = 0;
 
@@ -143,22 +147,26 @@ async function publishRosters(
         continue;
       }
 
-      const text = renderRoster(projectRoster(state, destination.alias, month), {
-        syncedAt: state.lastSync === null ? null : new Date(state.lastSync),
-      });
-      const textHash = rosterTextHash(text);
-      // R18: Telegram rejects an edit to identical text, and a no-op edit is
-      // pure waste against the per-group rate limit.
-      if (textHash === record.textHash) continue;
+      try {
+        const text = renderRoster(projectRoster(state, destination.alias, month), {
+          syncedAt: state.lastSync === null ? null : new Date(state.lastSync),
+        });
+        const textHash = rosterTextHash(text);
+        // R18: Telegram rejects an edit to identical text, and a no-op edit is
+        // pure waste against the per-group rate limit.
+        if (textHash === record.textHash) continue;
 
-      await editMessageText(telegram, destination.chatId, record.messageId, text);
-      edits += 1;
-      state = {
-        ...state,
-        rosters: { ...state.rosters, [key]: { messageId: record.messageId, textHash } },
-      };
+        await editMessageText(telegram, destination.chatId, record.messageId, text);
+        edits += 1;
+        state = {
+          ...state,
+          rosters: { ...state.rosters, [key]: { messageId: record.messageId, textHash } },
+        };
+      } catch (error) {
+        failures.push(`roster ${destination.alias} ${month}: ${describe(error)}`);
+      }
     }
   }
 
-  return { state, edits };
+  return { state, edits, failures };
 }

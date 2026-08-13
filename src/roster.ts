@@ -209,12 +209,33 @@ function compose(
 }
 
 /**
+ * Even without names, the roster does not fit Telegram's message limit. (R21)
+ *
+ * Reachable because option labels may be up to 100 characters and members can
+ * add options: four full polls of maximum-length labels render to well over
+ * 4096 characters as counts alone. Sending it anyway would have Telegram reject
+ * the edit every hour forever, so this refuses deterministically instead.
+ */
+export class RosterTooLargeError extends Error {
+  readonly length: number;
+
+  constructor(length: number) {
+    super(
+      `roster renders to ${length} characters without names, over Telegram's ${MAX_MESSAGE_LENGTH}-character limit; it cannot be sent without dropping sessions`,
+    );
+    this.name = 'RosterTooLargeError';
+    this.length = length;
+  }
+}
+
+/**
  * Render one destination's roster. (R19, R20, R21)
  *
  * When the named form would exceed Telegram's limit, every attendee list in the
  * message collapses to a count — sessions and unresolved options alike. Dropping
  * names wholesale keeps the roster honest; truncating it would silently erase
- * somebody's attendance.
+ * somebody's attendance. If even that does not fit, nothing is sent: no session
+ * is dropped quietly to make room.
  */
 export function renderRoster(projection: RosterProjection, options: RenderOptions): string {
   const named = compose(projection, options.syncedAt, null, (attendees) =>
@@ -222,7 +243,9 @@ export function renderRoster(projection: RosterProjection, options: RenderOption
   );
   if (options.degrade === false || named.length <= MAX_MESSAGE_LENGTH) return named;
 
-  return compose(projection, options.syncedAt, OMISSION_NOTICE, (attendees) =>
+  const counted = compose(projection, options.syncedAt, OMISSION_NOTICE, (attendees) =>
     attendees.length === 0 ? EMPTY_SESSION : String(attendees.length),
   );
+  if (counted.length > MAX_MESSAGE_LENGTH) throw new RosterTooLargeError(counted.length);
+  return counted;
 }
