@@ -119,9 +119,40 @@ at the first unchecked step below.
   `npm run snapshot:check` → exit 0 (104 holidays, covers to 2027-12);
   offline preview → renders payloads, `preview only — no Telegram request was
   made.` Secrets scan clean before each of the three commits.
-- [ ] F10 — T15 independent review via `codex:rescue`, then act on findings.
-- [ ] F11 — merge gate: blocked by design; destination `main` is protected and
-  the owner is unavailable. Requires explicit per-merge confirmation.
+- [x] F9a — self-review of `git diff docs/004-attendance-roster..HEAD` found two
+  defects that the tests did not, both fixed in `ca2bd72`:
+  1. The shared test `deps` helper passed no `attendancePath`, so `run()` fell
+     back to `state/attendance.json` relative to the working directory and the
+     suite wrote into the repository — a real `state/attendance.json` had been
+     committed in `2090309`.
+  2. That committed file had no `messageId` on either roster record, because
+     `run()` recorded whatever Telegram returned and `JSON.stringify` drops
+     `undefined`. The file then failed `parseAttendanceState` on the next load
+     (observed: `invalid attendance state: roster "test|2026-11" has no message
+     id`), which would have degraded every later monthly run and failed the
+     hourly collection job permanently. Both roster and poll registration now
+     require the identifiers they cannot work without.
+- [x] F9b — measured the R21 degrade boundary rather than assuming it. Worst
+  case the data model allows (4 polls x 12 options x 100-character labels)
+  renders to **5792 characters as counts alone**, against Telegram's 4096, so
+  R21's guarantee did not hold. `renderRoster` now raises
+  `RosterTooLargeError`, and collection attempts each roster independently so
+  one unrenderable roster no longer stops other groups updating. Fixed in
+  `b51cc6e`.
+- [ ] F10 — T15 independent review via `codex:rescue`. First run returned
+  without findings (it handed off to a background Codex task); resumed and
+  awaiting its output. **Not yet evidence of anything.**
+- [x] F11a — merge integration verified without touching the protected branch:
+  disposable worktree at `main` (447dacf), `git merge --no-ff --no-commit
+  feature/004-attendance-roster` → `Automatic merge went well; stopped before
+  committing as requested`, no conflicts. Gates on the integrated tree:
+  `npm test` 167 passing, `npm run typecheck` exit 0, `npm run lint` exit 0,
+  `npm run snapshot:check` exit 0, secrets scan clean. Merge aborted, worktree
+  and branch removed; `main` still at 447dacf.
+- [ ] F11 — merge gate: **blocked by design.** Destination `main` is protected
+  and the owner is asleep. Requires explicit per-merge confirmation. Note the
+  merge would bring both `docs/004-attendance-roster` and this branch, since
+  the former is also unmerged.
 
 ## Loop log
 
@@ -129,10 +160,36 @@ at the first unchecked step below.
 - round 2/3: Q5, Q7, Q8, Q11 asked, all four answered. Converged; no round 3
   needed.
 
-## Handback
+## Handback — implementation
 
-Not a bailout — planning completed and persisted. Carried forward for whoever
-picks this up:
+Not a bailout. The feature is implemented, tested, documented, and committed on
+`feature/004-attendance-roster`; the only outstanding action is the merge, which
+needs the owner.
+
+**Requires the owner:**
+
+- Merging into protected `main` — explicit per-merge confirmation. The merge was
+  verified clean in a disposable worktree (F11a) but never run against `main`.
+- **The repository must be private before this is enabled** (R24).
+  `state/attendance.json` will hold member names, Telegram user IDs, and
+  attendance. Nothing in code can enforce this.
+
+**Never verified against a live Telegram group** — prohibited here, and both
+assumptions are load-bearing:
+
+- that editing a pinned message produces no notification (the whole "no spam"
+  premise);
+- that `poll` and `poll_answer` updates carry `persistent_id` /
+  `option_persistent_ids` in practice. If they do not, `applyPollAnswer` raises
+  `MissingPersistentIdError` and refuses to guess — collection will fail loudly
+  rather than silently misattribute votes, which is the intended failure mode
+  but does mean the feature will not work at all until it is corrected.
+- Also unverified: that the bot may pin in the target groups. A failed pin is
+  reported and non-fatal; the roster still updates.
+
+## Handback — planning phase
+
+Carried forward from planning:
 
 - `docs/004-attendance-roster` is unmerged; merging it into protected `main`
   needs a separate explicit owner confirmation.
