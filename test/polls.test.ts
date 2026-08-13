@@ -219,3 +219,45 @@ test('buildPolls refuses a holiday month whose AM/PM options overflow', () => {
     },
   );
 });
+
+// ---------------------------------------------------------------------------
+// Spec 004 — session metadata for attendance registration
+// ---------------------------------------------------------------------------
+
+// R6, R10: registration is authoritative, so the session behind each option
+// must travel with the payload. Reverse-parsing "5 Sep, 10am-12pm" later would
+// be brittle and would guess at member-added options it cannot know.
+test('every poll carries a session aligned with each option', () => {
+  const built = buildPolls({ target: SEPT, holidayDates: ['2026-09-15'] });
+
+  for (const candidate of built.polls) {
+    assert.equal(
+      candidate.sessions.length,
+      candidate.options.length,
+      `${candidate.kind} sessions must align 1:1 with options`,
+    );
+    // The shared opt-out answer is not a session.
+    assert.equal(candidate.sessions[candidate.sessions.length - 1], null);
+    assert.equal(candidate.options[candidate.options.length - 1], CMI_OPTION);
+  }
+});
+
+test('Friday sessions carry a bare date and Saturday sessions carry a slot', () => {
+  const built = buildPolls({ target: SEPT, holidayDates: [] });
+
+  assert.deepEqual(poll(built, 'fridays').sessions[0], { date: '2026-09-04', slot: null });
+  assert.deepEqual(poll(built, 'saturdays').sessions[0], {
+    date: '2026-09-05',
+    slot: '10am-12pm',
+  });
+  assert.deepEqual(poll(built, 'saturdays').sessions[1], { date: '2026-09-05', slot: '7-9pm' });
+});
+
+// R46: holidays split into halves, so the slot distinguishes them.
+test('holiday sessions carry the AM and PM halves', () => {
+  const built = buildPolls({ target: SEPT, holidayDates: ['2026-09-15'] });
+  assert.deepEqual(poll(built, 'holidays').sessions.slice(0, 2), [
+    { date: '2026-09-15', slot: 'AM' },
+    { date: '2026-09-15', slot: 'PM' },
+  ]);
+});

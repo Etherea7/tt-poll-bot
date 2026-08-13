@@ -1,8 +1,9 @@
 import assert from 'node:assert/strict';
 import { mkdtempSync, readdirSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { test } from 'node:test';
+import { loadAttendanceState } from '../src/attendance.ts';
 import { parseConfig } from '../src/config.ts';
 import type { HolidayRow } from '../src/holidays.ts';
 import { run } from '../src/run.ts';
@@ -21,10 +22,14 @@ const env = (over: Record<string, string | undefined> = {}) => ({
 });
 
 const spyFetch = () => {
-  const calls: Array<{ method: string; chatId: unknown }> = [];
+  const calls: Array<{ method: string; chatId: unknown; text: unknown }> = [];
   const fetchImpl = (async (input: string | URL | Request, init?: RequestInit) => {
-    const body = JSON.parse(String(init?.body ?? '{}')) as { chat_id?: unknown };
-    calls.push({ method: String(input).split('/').pop() ?? '', chatId: body.chat_id });
+    const body = JSON.parse(String(init?.body ?? '{}')) as { chat_id?: unknown; text?: unknown };
+    calls.push({
+      method: String(input).split('/').pop() ?? '',
+      chatId: body.chat_id,
+      text: body.text,
+    });
     return new Response(JSON.stringify({ ok: true, result: {} }), { status: 200 });
   }) as unknown as typeof fetch;
   return { fetchImpl, calls };
@@ -172,7 +177,11 @@ test('force replaces only a previous claim during prepare', async () => {
   const { fetchImpl, calls } = spyFetch();
   const outcome = await live(path, fetchImpl, [], 'run-2');
   assert.equal(outcome.exitCode, 0);
-  assert.equal(calls.length, 8);
+  assert.equal(calls.filter((call) => call.method === 'sendPoll').length, 8);
+  // Spec 004: a full run also posts and pins one roster per destination.
+  assert.equal(calls.filter((call) => call.method === 'sendMessage').length, 2);
+  assert.equal(calls.filter((call) => call.method === 'pinChatMessage').length, 2);
+  assert.equal(calls.length, 12);
 });
 
 test('force recovery can target only the inspected destination and kind', async () => {
@@ -253,7 +262,10 @@ test('covered empty month sends its informational message after prepare', async 
   const { fetchImpl, calls } = spyFetch();
   const outcome = await live(path, fetchImpl, ['--month', '2026-12']);
   assert.equal(outcome.exitCode, 0);
-  assert.equal(calls.filter((call) => call.method === 'sendMessage').length, 2);
+  const sent = calls.filter((call) => call.method === 'sendMessage');
+  // Spec 004 adds a roster message, so identify the informational one by text.
+  assert.equal(sent.filter((call) => /No public holidays/.test(String(call.text))).length, 2);
+  assert.equal(sent.filter((call) => /TT attendance/.test(String(call.text))).length, 2);
 });
 
 test('run omits holiday work when the target year is uncovered', async () => {
@@ -286,4 +298,149 @@ test('no source file derives a chat id from a Telegram response', () => {
     const source = readFileSync(join('src', file), 'utf8');
     assert.ok(!/\.chat\??\.\s*id/.test(source), `${file} appears to read a chat id from Telegram`);
   }
+});
+
+// ---------------------------------------------------------------------------
+// Spec 004 — attendance registration and the roster message
+// ---------------------------------------------------------------------------
+
+/** A fetch double that answers with realistic Telegram results. */
+const attendanceFetch = () => {
+  const calls: Array<{ method: string; chatId: unknown; body: Record<string, unknown> }> = [];
+  let pollId = 0;
+  let messageId = 100;
+  const fetchImpl = (async (input: string | URL | Request, init?: RequestInit) => {
+    const method = String(input).split('/').pop() ?? '';
+    const body = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>;
+    calls.push({ method, chatId: body.chat_id, body });
+
+    messageId += 1;
+    if (method === 'sendPoll') {
+      pollId += 1;
+      const options = (body.options as Array<{ text: string }>).map((option, index) => ({
+        text: option.text,
+        persistent_id: `p${pollId}-${index}`,
+      }));
+      return new Response(
+        JSON.stringify({
+          ok: true,
+          result: { message_id: messageId, poll: { id: `poll-${pollId}`, options } },
+        }),
+        { status: 200 },
+      );
+    }
+    return new Response(JSON.stringify({ ok: true, result: { message_id: messageId } }), {
+      status: 200,
+    });
+  }) as unknown as typeof fetch;
+  return { fetchImpl, calls };
+};
+
+const attendanceDeps = (fetchImpl: typeof fetch, deliveryPath: string, attendancePath: string) => ({
+  now: NOW,
+  snapshot: SNAPSHOT,
+  deliveryPath,
+  attendancePath,
+  telegram: { fetchImpl },
+});
+
+const liveWithAttendance = (
+  deliveryPath: string,
+  attendancePath: string,
+  fetchImpl: typeof fetch,
+  claim = 'run-1',
+) =>
+  run(
+    parseConfig(env(), ['--live', '--claim', claim]),
+    attendanceDeps(fetchImpl, deliveryPath, attendancePath),
+  );
+
+const rosterMessages = (calls: Array<{ method: string; body: Record<string, unknown> }>) =>
+  calls.filter(
+    (call) => call.method === 'sendMessage' && /TT attendance/.test(String(call.body.text)),
+  );
+
+// AC9 (R9, R10): the poll id exists only in the send response, so it is bound
+// to its destination there or not at all.
+test('a live run registers every delivered poll against its destination', async () => {
+  const deliveryPath = tempPath();
+  const attendancePath = join(dirname(deliveryPath), 'attendance.json');
+  await prepare(deliveryPath);
+  const { fetchImpl } = attendanceFetch();
+
+  await liveWithAttendance(deliveryPath, attendancePath, fetchImpl);
+
+  const state = loadAttendanceState(attendancePath);
+  const registered = Object.values(state.polls);
+  assert.equal(registered.length, 8, 'four polls to each of two destinations');
+  assert.deepEqual([...new Set(registered.map((poll) => poll.alias))].sort(), ['club', 'test']);
+  assert.ok(registered.every((poll) => poll.month === '2026-11'));
+
+  const friday = registered.find((poll) => poll.kind === 'fridays' && poll.alias === 'test');
+  assert.ok(friday);
+  assert.ok(friday.messageId > 0, 'the message id must be captured');
+  // Sessions travel with the payload, so option meanings are exact.
+  assert.deepEqual(friday.options[0]?.session, { date: '2026-11-06', slot: null });
+  assert.equal(friday.options.at(-1)?.cmi, true, 'the opt-out answer is flagged, not a session');
+  assert.ok(friday.options.every((option) => option.persistentId !== ''));
+});
+
+// AC10 (R11): attendance is optional; poll delivery is not.
+test('a failed attendance registration still delivers every poll', async () => {
+  const deliveryPath = tempPath();
+  // A path whose parent is a file cannot be created, so every save throws.
+  const blocked = join(deliveryPath, 'attendance.json');
+  await prepare(deliveryPath);
+  const { fetchImpl, calls } = attendanceFetch();
+
+  const outcome = await liveWithAttendance(deliveryPath, blocked, fetchImpl);
+
+  assert.equal(calls.filter((call) => call.method === 'sendPoll').length, 8);
+  assert.ok(
+    outcome.lines.some((line) => /attendance/i.test(line)),
+    'the degradation must be reported',
+  );
+  const record = JSON.parse(readFileSync(deliveryPath, 'utf8'));
+  assert.equal(record['2026-11'].test.fridays.status, 'delivered');
+});
+
+// AC14 (R15): the roster is claimed like a poll, so a retry cannot post two.
+test('the roster is posted once per destination and never twice', async () => {
+  const deliveryPath = tempPath();
+  const attendancePath = join(dirname(deliveryPath), 'attendance.json');
+  await prepare(deliveryPath);
+  const first = attendanceFetch();
+
+  await liveWithAttendance(deliveryPath, attendancePath, first.fetchImpl);
+  assert.equal(rosterMessages(first.calls).length, 2, 'one roster per destination');
+
+  const state = loadAttendanceState(attendancePath);
+  assert.equal(Object.keys(state.rosters).length, 2);
+
+  // A second run under a fresh claim must find the roster already delivered.
+  const second = attendanceFetch();
+  await prepare(deliveryPath);
+  await liveWithAttendance(deliveryPath, attendancePath, second.fetchImpl, 'run-2');
+  assert.equal(
+    rosterMessages(second.calls).length,
+    0,
+    'a delivered roster must not be posted again',
+  );
+});
+
+// AC15 (R16): a standalone message, pinned without waking anybody.
+test('the roster is pinned without a notification', async () => {
+  const deliveryPath = tempPath();
+  const attendancePath = join(dirname(deliveryPath), 'attendance.json');
+  await prepare(deliveryPath);
+  const { fetchImpl, calls } = attendanceFetch();
+
+  await liveWithAttendance(deliveryPath, attendancePath, fetchImpl);
+
+  const pins = calls.filter((call) => call.method === 'pinChatMessage');
+  assert.equal(pins.length, 2);
+  assert.ok(
+    pins.every((pin) => pin.body.disable_notification === true),
+    'pinning must never notify',
+  );
 });

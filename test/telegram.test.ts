@@ -19,6 +19,10 @@ const poll: PollPayload = {
   kind: 'fridays',
   question: 'Friday TT Sessions',
   options: ['6 Nov', '13 Nov'],
+  sessions: [
+    { date: '2026-11-06', slot: null },
+    { date: '2026-11-13', slot: null },
+  ],
   isAnonymous: false,
   allowsMultipleAnswers: true,
   allowAddingOptions: false,

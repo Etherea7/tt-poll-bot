@@ -42,10 +42,28 @@ export const QUESTIONS = {
 
 export type PollKind = 'fridays' | 'saturdays' | 'sundays' | 'holidays';
 
+/**
+ * One bookable session. `slot` is null where the whole date is the session
+ * (Fridays, Sundays) and set where a date splits (Saturdays by configured time,
+ * public holidays by AM/PM half).
+ */
+export interface SessionRef {
+  readonly date: string;
+  readonly slot: string | null;
+}
+
 export interface PollPayload {
   readonly kind: PollKind;
   readonly question: string;
   readonly options: readonly string[];
+  /**
+   * Aligned 1:1 with `options`; null for the shared opt-out answer. (R10)
+   *
+   * Attendance registration is authoritative about what an option means, so the
+   * meaning travels with the payload rather than being parsed back out of the
+   * rendered label later.
+   */
+  readonly sessions: readonly (SessionRef | null)[];
   readonly isAnonymous: false;
   readonly allowsMultipleAnswers: true;
   readonly allowAddingOptions: boolean;
@@ -77,9 +95,35 @@ export function slotOptions(dates: readonly string[], slots: readonly string[]):
   return options;
 }
 
+/**
+ * The sessions behind `slotOptions`, in the same order. (R10)
+ *
+ * Kept beside `slotOptions` deliberately: the two must not drift, since the
+ * pairing is what lets a vote be resolved to a date and slot later.
+ */
+export function slotSessions(dates: readonly string[], slots: readonly string[]): SessionRef[] {
+  const sessions: SessionRef[] = [];
+  for (const date of dates) {
+    for (const slot of slots) {
+      sessions.push({ date, slot });
+    }
+  }
+  return sessions;
+}
+
+/** The sessions behind a bare list of dates, in the same order. (R10) */
+function dateSessions(dates: readonly string[]): SessionRef[] {
+  return dates.map((date) => ({ date, slot: null }));
+}
+
 /** Append the shared opt-out answer as the final option. (R43) */
 function withCmi(options: readonly string[]): string[] {
   return [...options, CMI_OPTION];
+}
+
+/** Match `withCmi`: the opt-out answer has no session. (R12, R43) */
+function withCmiSession(sessions: readonly SessionRef[]): (SessionRef | null)[] {
+  return [...sessions, null];
 }
 
 /**
@@ -112,6 +156,7 @@ export function buildPolls(input: {
       // stay bare dates.
       question: QUESTIONS.fridays,
       options: withCmi(fridays.map((date) => formatDateOption(date))),
+      sessions: withCmiSession(dateSessions(fridays)),
       isAnonymous: false,
       allowsMultipleAnswers: true,
       allowAddingOptions: false,
@@ -120,6 +165,7 @@ export function buildPolls(input: {
       kind: 'saturdays',
       question: QUESTIONS.saturdays,
       options: withCmi(slotOptions(saturdays, slots)),
+      sessions: withCmiSession(slotSessions(saturdays, slots)),
       isAnonymous: false,
       allowsMultipleAnswers: true,
       // R40: only Saturdays vary by time slot, so only this poll invites
@@ -131,6 +177,7 @@ export function buildPolls(input: {
       // R42: one venue, one fixed slot — same shape as the Friday poll.
       question: QUESTIONS.sundays,
       options: withCmi(sundays.map((date) => formatDateOption(date))),
+      sessions: withCmiSession(dateSessions(sundays)),
       isAnonymous: false,
       allowsMultipleAnswers: true,
       allowAddingOptions: false,
@@ -145,6 +192,7 @@ export function buildPolls(input: {
       question: QUESTIONS.holidays,
       // R46: holiday sessions split into a morning and an afternoon half.
       options: withCmi(slotOptions(holidays, HOLIDAY_SLOTS)),
+      sessions: withCmiSession(slotSessions(holidays, HOLIDAY_SLOTS)),
       isAnonymous: false,
       allowsMultipleAnswers: true,
       allowAddingOptions: false,

@@ -1,19 +1,32 @@
+import type { AttendanceState, RegisteredOption } from './attendance.ts';
+import {
+  ATTENDANCE_PATH,
+  emptyAttendanceState,
+  loadAttendanceState,
+  registerPoll,
+  rosterKey,
+  saveAttendanceState,
+} from './attendance.ts';
 import { resolveTargetMonth } from './clock.ts';
 import type { RunConfig } from './config.ts';
+import { ALL_KINDS } from './config.ts';
+import type { DeliveryKind } from './delivery.ts';
 import {
   claimsForRun,
   loadDeliveryRecord,
   markDelivered,
   prepareClaims,
+  ROSTER_KIND,
   saveDeliveryRecord,
 } from './delivery.ts';
 import { formatMonthLabel } from './format.ts';
 import type { HolidayResult, HolidayRow } from './holidays.ts';
 import { coversYear, holidaysInMonth, resolveHolidays } from './holidays.ts';
-import type { PollKind } from './polls.ts';
-import { buildPolls, DEFAULT_SLOTS } from './polls.ts';
-import type { TelegramConfig } from './telegram.ts';
-import { sendMessage, sendPoll } from './telegram.ts';
+import type { PollKind, PollPayload } from './polls.ts';
+import { buildPolls, CMI_OPTION, DEFAULT_SLOTS } from './polls.ts';
+import { projectRoster, renderRoster, rosterTextHash } from './roster.ts';
+import type { TelegramConfig, TelegramMessage } from './telegram.ts';
+import { pinChatMessage, sendMessage, sendPoll } from './telegram.ts';
 
 export interface RunOutcome {
   readonly exitCode: number;
@@ -26,9 +39,36 @@ export interface RunDeps {
   readonly now: Date;
   readonly snapshot: readonly HolidayRow[];
   readonly deliveryPath: string;
+  readonly attendancePath?: string;
   readonly holidayFetchImpl?: typeof fetch;
   readonly telegram?: Partial<TelegramConfig>;
 }
+
+/**
+ * Bind a delivered poll to its destination and option meanings. (R10)
+ *
+ * Telegram echoes the options in the order they were sent, so the payload's
+ * aligned sessions supply each one's meaning. An option Telegram did not
+ * return an id for is skipped rather than guessed at.
+ */
+function registrationOptions(poll: PollPayload, sent: TelegramMessage): RegisteredOption[] {
+  const options: RegisteredOption[] = [];
+  sent.poll?.options.forEach((option, index) => {
+    const persistentId = option.persistent_id;
+    if (!persistentId) return;
+    const label = poll.options[index] ?? option.text;
+    options.push({
+      persistentId,
+      label,
+      session: poll.sessions[index] ?? null,
+      cmi: label === CMI_OPTION,
+    });
+  });
+  return options;
+}
+
+const describe = (error: unknown): string =>
+  error instanceof Error ? error.message : String(error);
 
 /** Always fails, so snapshot-only tests and offline runs perform no network I/O. */
 const noNetwork = (async () => new Response('', { status: 503 })) as unknown as typeof fetch;
@@ -73,6 +113,14 @@ export async function run(config: RunConfig, deps: RunDeps): Promise<RunOutcome>
       slots: config.slots ?? DEFAULT_SLOTS,
     });
     const requested = config.kinds.filter((kind) => holidays.covered || kind !== 'holidays');
+    // R15: the roster is claimed alongside the polls so a retried run cannot
+    // post a second one. It is not a poll kind and never reaches `buildPolls`.
+    //
+    // A run narrowed with `--only` is an operator recovering specific polls;
+    // dragging the roster into that scope would post one for a month whose
+    // other polls are not being sent. Only a full run owns the roster.
+    const fullRun = config.kinds.length === ALL_KINDS.length;
+    const deliveryKinds: DeliveryKind[] = fullRun ? [...requested, ROSTER_KIND] : [...requested];
     const polls = built.polls.filter((poll) => requested.includes(poll.kind));
     const messages = built.messages.filter((message) => requested.includes(message.kind));
     const exitCode = holidays.covered ? 0 : 1;
@@ -96,7 +144,14 @@ export async function run(config: RunConfig, deps: RunDeps): Promise<RunOutcome>
     if (!claimId) throw new Error(`--${config.mode} requires a claim id`);
 
     if (config.mode === 'prepare') {
-      const prepared = prepareClaims(record, monthKey, aliases, requested, claimId, config.force);
+      const prepared = prepareClaims(
+        record,
+        monthKey,
+        aliases,
+        deliveryKinds,
+        claimId,
+        config.force,
+      );
       if (prepared.record !== record) saveDeliveryRecord(prepared.record, deps.deliveryPath);
       if (prepared.blocked.length > 0) {
         lines.push(
@@ -112,7 +167,7 @@ export async function run(config: RunConfig, deps: RunDeps): Promise<RunOutcome>
       return { exitCode: 0, lines, sentKinds: [], skipped: false };
     }
 
-    const owned = claimsForRun(record, monthKey, aliases, requested, claimId);
+    const owned = claimsForRun(record, monthKey, aliases, deliveryKinds, claimId);
     if (owned.blocked.length > 0 || owned.missing.length > 0) {
       lines.push('delivery blocked: every destination/kind must be prepared by this claim id');
       return { exitCode: 1, lines, sentKinds: [], skipped: false };
@@ -126,13 +181,57 @@ export async function run(config: RunConfig, deps: RunDeps): Promise<RunOutcome>
     const telegram: TelegramConfig = { token: config.token, ...deps.telegram };
     let updated = record;
 
+    // R11: attendance is optional and poll delivery is not, so every attendance
+    // step below is isolated. A failure degrades attendance and is reported; it
+    // never resends, withholds, or delays a poll.
+    const attendancePath = deps.attendancePath ?? ATTENDANCE_PATH;
+    let attendance = emptyAttendanceState();
+    let attendanceHealthy = true;
+    const degradeAttendance = (what: string, error: unknown): void => {
+      attendanceHealthy = false;
+      lines.push(`attendance ${what} failed; poll delivery unaffected: ${describe(error)}`);
+    };
+    const recordAttendance = (
+      mutate: (state: AttendanceState) => AttendanceState,
+      what: string,
+    ): void => {
+      if (!attendanceHealthy) return;
+      try {
+        attendance = mutate(attendance);
+        saveAttendanceState(attendance, attendancePath);
+      } catch (error) {
+        degradeAttendance(what, error);
+      }
+    };
+    try {
+      attendance = loadAttendanceState(attendancePath);
+    } catch (error) {
+      degradeAttendance('state load', error);
+    }
+
     for (const poll of polls) {
       for (const destination of config.destinations) {
         if (!sendable.has(`${destination.alias}\u0000${poll.kind}`)) continue;
-        await sendPoll(telegram, destination.chatId, poll);
+        const sent = await sendPoll(telegram, destination.chatId, poll);
         updated = markDelivered(updated, monthKey, destination.alias, poll.kind, claimId);
         saveDeliveryRecord(updated, deps.deliveryPath);
         sentKinds.add(poll.kind);
+
+        // R10: the poll id is assigned here and nowhere else.
+        const pollId = sent.poll?.id;
+        if (pollId) {
+          recordAttendance(
+            (state) =>
+              registerPoll(state, pollId, {
+                alias: destination.alias,
+                month: monthKey,
+                kind: poll.kind,
+                messageId: sent.message_id,
+                options: registrationOptions(poll, sent),
+              }),
+            `registration for ${destination.alias}/${poll.kind}`,
+          );
+        }
       }
     }
     for (const message of messages) {
@@ -142,6 +241,40 @@ export async function run(config: RunConfig, deps: RunDeps): Promise<RunOutcome>
         updated = markDelivered(updated, monthKey, destination.alias, message.kind, claimId);
         saveDeliveryRecord(updated, deps.deliveryPath);
         sentKinds.add(message.kind);
+      }
+    }
+
+    // R15, R16: one standalone roster per destination, pinned silently. Posted
+    // after the polls so it already reflects the registrations recorded above.
+    for (const destination of config.destinations) {
+      if (!sendable.has(`${destination.alias}\u0000${ROSTER_KIND}`)) continue;
+      const text = renderRoster(projectRoster(attendance, destination.alias, monthKey), {
+        syncedAt: null,
+      });
+      const sent = await sendMessage(telegram, destination.chatId, text);
+      updated = markDelivered(updated, monthKey, destination.alias, ROSTER_KIND, claimId);
+      saveDeliveryRecord(updated, deps.deliveryPath);
+
+      recordAttendance(
+        (state) => ({
+          ...state,
+          rosters: {
+            ...state.rosters,
+            [rosterKey(destination.alias, monthKey)]: {
+              messageId: sent.message_id,
+              textHash: rosterTextHash(text),
+            },
+          },
+        }),
+        `roster record for ${destination.alias}`,
+      );
+
+      // Pinning needs a permission the bot may not hold. The roster message is
+      // already delivered, so a failed pin is reported and never fatal.
+      try {
+        await pinChatMessage(telegram, destination.chatId, sent.message_id);
+      } catch (error) {
+        lines.push(`roster pin failed for ${destination.alias}: ${describe(error)}`);
       }
     }
 

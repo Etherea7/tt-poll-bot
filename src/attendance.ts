@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { ALL_KINDS } from './config.ts';
-import type { PollKind } from './polls.ts';
+import type { PollKind, SessionRef } from './polls.ts';
 import type { TelegramPoll, TelegramPollAnswer, TelegramUser } from './telegram.ts';
 
 export const ATTENDANCE_PATH = 'state/attendance.json';
@@ -15,15 +15,9 @@ const ALIAS = /^[a-z][a-z0-9-]{0,31}$/;
 const USER_ID = /^\d+$/;
 const KINDS: ReadonlySet<string> = new Set(ALL_KINDS);
 
-/**
- * A single bookable slot. `slot` is null for polls whose sessions are a whole
- * date (Fridays, Sundays) and set for those split within a day (Saturdays by
- * time, holidays by AM/PM).
- */
-export interface SessionRef {
-  readonly date: string;
-  readonly slot: string | null;
-}
+// Defined beside the poll builder that produces sessions, so the two cannot
+// drift; re-exported here because this is where stored state consumes it.
+export type { SessionRef };
 
 /**
  * One answer option as it was registered at send time.

@@ -4,10 +4,28 @@ import type { PollKind } from './polls.ts';
 
 export const DELIVERY_PATH = 'state/delivered.json';
 
+/** The attendance roster, claimed like a poll though it is not one. (R15) */
+export const ROSTER_KIND = 'roster';
+
+/**
+ * Everything the monthly job delivers at most once.
+ *
+ * Wider than `PollKind` on purpose: the roster message needs the same
+ * at-most-once claim so a retried run cannot post a second one, but it must not
+ * reach the poll builder, so `PollKind` itself stays exactly the four polls.
+ */
+export type DeliveryKind = PollKind | typeof ROSTER_KIND;
+
 const MONTH = /^\d{4}-(0[1-9]|1[0-2])$/;
 const ALIAS = /^[a-z][a-z0-9-]{0,31}$/;
 const CLAIM_ID = /^[A-Za-z0-9._-]{1,100}$/;
-const KINDS: ReadonlySet<string> = new Set(['fridays', 'saturdays', 'sundays', 'holidays']);
+const KINDS: ReadonlySet<string> = new Set([
+  'fridays',
+  'saturdays',
+  'sundays',
+  'holidays',
+  ROSTER_KIND,
+]);
 
 export interface DeliveryStatus {
   readonly status: 'claimed' | 'delivered';
@@ -16,12 +34,12 @@ export interface DeliveryStatus {
 
 export type DeliveryRecord = Record<
   string,
-  Record<string, Partial<Record<PollKind, DeliveryStatus>>>
+  Record<string, Partial<Record<DeliveryKind, DeliveryStatus>>>
 >;
 
 export interface DeliveryTarget {
   readonly alias: string;
-  readonly kind: PollKind;
+  readonly kind: DeliveryKind;
 }
 
 function parseStatus(value: unknown): DeliveryStatus {
@@ -52,18 +70,18 @@ export function parseDeliveryRecord(value: unknown): DeliveryRecord {
     if (typeof destinations !== 'object' || destinations === null || Array.isArray(destinations)) {
       throw new Error(`invalid delivery record: "${month}" must map to destination aliases`);
     }
-    const parsedDestinations: Record<string, Partial<Record<PollKind, DeliveryStatus>>> = {};
+    const parsedDestinations: Record<string, Partial<Record<DeliveryKind, DeliveryStatus>>> = {};
     for (const [alias, kinds] of Object.entries(destinations as Record<string, unknown>)) {
       if (!ALIAS.test(alias))
         throw new Error(`invalid delivery record: "${alias}" is not a safe alias`);
       if (typeof kinds !== 'object' || kinds === null || Array.isArray(kinds)) {
         throw new Error(`invalid delivery record: alias "${alias}" must map to poll kinds`);
       }
-      const parsedKinds: Partial<Record<PollKind, DeliveryStatus>> = {};
+      const parsedKinds: Partial<Record<DeliveryKind, DeliveryStatus>> = {};
       for (const [kind, status] of Object.entries(kinds as Record<string, unknown>)) {
         if (!KINDS.has(kind))
           throw new Error(`invalid delivery record: unknown poll kind "${kind}"`);
-        parsedKinds[kind as PollKind] = parseStatus(status);
+        parsedKinds[kind as DeliveryKind] = parseStatus(status);
       }
       parsedDestinations[alias] = parsedKinds;
     }
@@ -89,7 +107,7 @@ function statusFor(
   record: DeliveryRecord,
   month: string,
   alias: string,
-  kind: PollKind,
+  kind: DeliveryKind,
 ): DeliveryStatus | undefined {
   return record[month]?.[alias]?.[kind];
 }
@@ -98,7 +116,7 @@ function setStatus(
   record: DeliveryRecord,
   month: string,
   alias: string,
-  kind: PollKind,
+  kind: DeliveryKind,
   status: DeliveryStatus,
 ): DeliveryRecord {
   return {
@@ -115,7 +133,7 @@ export function prepareClaims(
   record: DeliveryRecord,
   month: string,
   aliases: readonly string[],
-  kinds: readonly PollKind[],
+  kinds: readonly DeliveryKind[],
   claimId: string,
   force: boolean,
 ): { record: DeliveryRecord; claimed: DeliveryTarget[]; blocked: DeliveryTarget[] } {
@@ -152,7 +170,7 @@ export function claimsForRun(
   record: DeliveryRecord,
   month: string,
   aliases: readonly string[],
-  kinds: readonly PollKind[],
+  kinds: readonly DeliveryKind[],
   claimId: string,
 ): { sendable: DeliveryTarget[]; blocked: DeliveryTarget[]; missing: DeliveryTarget[] } {
   const sendable: DeliveryTarget[] = [];
@@ -175,7 +193,7 @@ export function markDelivered(
   record: DeliveryRecord,
   month: string,
   alias: string,
-  kind: PollKind,
+  kind: DeliveryKind,
   claimId: string,
 ): DeliveryRecord {
   const current = statusFor(record, month, alias, kind);

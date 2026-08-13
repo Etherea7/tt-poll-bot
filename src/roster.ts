@@ -1,9 +1,20 @@
+import { createHash } from 'node:crypto';
 import type { AttendanceState, SessionRef, StoredUser } from './attendance.ts';
 import { formatMonthLabel } from './format.ts';
 import type { PollKind } from './polls.ts';
 
 /** Telegram's message ceiling. (R21) */
 export const MAX_MESSAGE_LENGTH = 4096;
+
+/**
+ * Identify the exact text last sent for a roster. (R18)
+ *
+ * Stored instead of the text itself: the roster would otherwise be duplicated
+ * into committed state and re-diffed in Git on every vote.
+ */
+export function rosterTextHash(text: string): string {
+  return createHash('sha256').update(text).digest('hex');
+}
 
 const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] as const;
 
