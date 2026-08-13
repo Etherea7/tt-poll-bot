@@ -8,8 +8,11 @@ contacted.
 
 | Variable | GitHub location | Purpose |
 |---|---|---|
-| `TELEGRAM_BOT_TOKEN` | Actions **secret** | BotFather token. Required only by `--live`. |
+| `TELEGRAM_BOT_TOKEN` | Actions **secret** | BotFather token. Required by `--live` and by attendance collection. |
 | `TELEGRAM_DESTINATIONS` | Actions **variable** | Comma-separated `alias=chatId` allow-list. |
+
+Both workflows read the same two values; attendance collection adds no
+configuration of its own.
 
 Use a stable lowercase alias beginning with a letter; digits and hyphens may
 follow. For one test group:
@@ -96,6 +99,82 @@ any month** — even a 4-Saturday month reaches 13 — and is rejected before
 claims or Telegram requests. A month would need six holidays outside Fri/Sat/Sun
 to overflow the holiday poll; no month in the committed snapshot does.
 
+## Attendance roster
+
+Votes are turned into a per-session roster so members do not have to tap
+through four polls to see who is coming. The roster lives entirely inside
+Telegram — there is no web page, database, or second deployment. The reasoning,
+including the alternatives rejected, is in
+[`ATTENDANCE-DECISION.md`](ATTENDANCE-DECISION.md); the behaviour is specified
+in [`specs/004-attendance-roster/spec.md`](../specs/004-attendance-roster/spec.md).
+
+### How it works
+
+1. After posting the month's polls, the monthly job posts **one roster message
+   per destination** and pins it without a notification. The roster is claimed
+   in `state/delivered.json` like a poll, so a retried run cannot post a second.
+2. An hourly **Attendance collection** workflow calls `getUpdates`, applies the
+   votes, and edits that same message in place. Editing reuses the message id,
+   so the group never receives a new message and nobody is notified.
+
+A vote therefore appears in the roster by the end of the next hourly run. The
+roster's last line carries the sync time in `Asia/Singapore`, so a stalled
+collection job is visible rather than silent.
+
+```text
+TT attendance — November 2026
+
+Fri 6 Nov — Alice, Bob
+Fri 13 Nov — nobody yet
+Sat 7 Nov, 10am-12pm — Alice, Bob T., Bob W.
+
+updated 14:35 SGT
+```
+
+`cmi` is stored but never shown: it is an opt-out, not a session. An option a
+member added to the Saturday poll appears under an `Other options` heading with
+its voters, since the system cannot know what date it means. If the full roster
+would exceed Telegram's 4096-character limit, every attendee list collapses to
+a count and the message says names were omitted — it is never truncated.
+
+A run narrowed with `--only` does not post a roster: that scope is for
+recovering specific polls.
+
+### Collection job
+
+```bash
+npm run collect
+```
+
+This contacts Telegram and is normally run only by the workflow. It reads
+updates and edits an existing roster message; it has no code path that can post
+a new message or send a poll, so it cannot disturb poll delivery. A failed run
+exits non-zero and the workflow goes red.
+
+`getUpdates` and `setWebhook` are mutually exclusive, and two concurrent
+consumers receive HTTP 409. Never register a webhook for this bot, and never
+run a second collector against the same token.
+
+### Attendance state
+
+`state/attendance.json` holds the Telegram offset, poll registrations, votes,
+display names, and one record per roster message.
+
+> **The repository must stay private.** This file contains member names,
+> Telegram user IDs, and who attends which session. Making the repository
+> public would publish all of it.
+
+Months are pruned 60 days after they end, and a member no longer referenced by
+any vote is dropped with them. Pruning bounds the working file only — Git
+history still holds what it recorded, and the no-force-push policy means that
+cannot be rewritten. Treat the retention window as "what the file shows", not
+as deletion.
+
+Votes cast before a poll was registered cannot be recovered: Telegram delivers
+individual voters as updates and keeps unconsumed ones for 24 hours only. If
+the collection workflow is disabled or fails for longer than a day, those
+changes are lost and members must re-vote for the roster to catch up.
+
 ## Holiday data ingestion
 
 The source is the MOM-managed consolidated public-holiday dataset on
@@ -129,7 +208,9 @@ ingestion, not an unattended workflow mutation.
 
 ## At-most-once delivery state
 
-`state/delivered.json` stores month, destination alias, kind, and status:
+`state/delivered.json` stores month, destination alias, kind, and status. Kinds
+are the four polls plus `roster`, which is claimed the same way so a retried run
+cannot post a second roster message:
 
 ```json
 {
@@ -201,9 +282,30 @@ Never use an unscoped force retry after an ambiguous result.
     appending a new alias mapping, previewing with `to=<new-alias>`, and repeating
     the live test for that alias before including it in scheduled runs.
 
+### Enabling the attendance roster
+
+Do this only after the poll rollout above is verified, and only on a **private**
+repository.
+
+1. Confirm the bot can pin messages in the group. If it cannot, the roster is
+   still posted and updated; it simply is not pinned, and the failure is
+   reported in the run output.
+2. Confirm no webhook is registered for the bot. `getUpdates` will otherwise
+   fail and no votes will ever be collected.
+3. After the next live monthly dispatch, check that the group contains one
+   pinned roster message and that `state/attendance.json` lists the polls and
+   one roster per destination.
+4. Vote in the test group, wait for the hourly **Attendance collection** run,
+   and verify the roster message was edited — not re-sent — and that its sync
+   time advanced.
+5. Change and then fully retract a vote. The name must move between sessions
+   and then disappear entirely.
+6. Confirm a `cmi` vote leaves the member out of every session and adds no line
+   to the roster.
+
 Also enable GitHub Actions failure notifications for the repository. A non-zero
 exit is the operator signal for uncovered holiday data, a blocked claim,
-configuration/build failure, or Telegram failure.
+configuration/build failure, Telegram failure, or a failed collection run.
 
 ## Exit codes
 
@@ -211,3 +313,9 @@ configuration/build failure, or Telegram failure.
 |---|---|
 | 0 | Previewed, prepared, delivered, or nothing selected remains |
 | 1 | Uncovered holiday data, stale claim, invalid input/build, or transport failure |
+
+Attendance collection uses the same codes: 0 when updates were applied (or
+there were none), 1 for a failed `getUpdates`, a failed roster edit, unreadable
+state, or missing configuration. A failed registration during the monthly job
+does **not** fail that job — attendance is optional, poll delivery is not — but
+it is reported in the run output.

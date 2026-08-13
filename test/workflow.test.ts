@@ -50,3 +50,66 @@ test('each state-push step authenticates before fetching or pushing', () => {
     assert.ok(push > fetch, `${stepName} must fetch and rebase before pushing`);
   }
 });
+
+// ---------------------------------------------------------------------------
+// Spec 004 — the attendance collection workflow
+// ---------------------------------------------------------------------------
+
+const attendance = readFileSync('.github/workflows/attendance.yml', 'utf8');
+
+// AC1 (R1): hourly collection, far inside Telegram's 24-hour update retention.
+test('attendance workflow collects hourly', () => {
+  assert.match(attendance, /schedule:/);
+  assert.match(attendance, /cron:\s*'0 \* \* \* \*'/);
+});
+
+// AC2 (R2): two concurrent getUpdates consumers receive HTTP 409, so the
+// workflow must never overlap with itself.
+test('attendance workflow runs as a single consumer', () => {
+  assert.match(attendance, /concurrency:/);
+  assert.match(attendance, /group:\s*attendance/);
+  assert.match(attendance, /cancel-in-progress:\s*false/);
+});
+
+// AC2 (R2): getUpdates and setWebhook are mutually exclusive. Nothing in this
+// project may register a webhook, or collection stops silently.
+test('no source or workflow file registers a Telegram webhook', () => {
+  const files = [
+    'src/collect.ts',
+    'src/collect-main.ts',
+    'src/telegram.ts',
+    'src/run.ts',
+    '.github/workflows/attendance.yml',
+    '.github/workflows/monthly-polls.yml',
+  ];
+  for (const file of files) {
+    assert.doesNotMatch(
+      readFileSync(file, 'utf8'),
+      /setWebhook/i,
+      `${file} must not set a webhook`,
+    );
+  }
+});
+
+// The same credential discipline as the monthly workflow: the checkout carries
+// no write credential, so the push step configures its own auth before any
+// network operation.
+test('attendance workflow authenticates before fetching or pushing state', () => {
+  assert.match(attendance, /uses:\s*actions\/checkout@v6\b/);
+  assert.match(attendance, /actions\/checkout@v6[\s\S]*?persist-credentials:\s*false/);
+
+  const auth = attendance.indexOf('git config "$auth_key" "AUTHORIZATION: basic $basic_auth"');
+  const fetched = attendance.indexOf('git fetch origin "$GITHUB_REF_NAME"');
+  const push = attendance.indexOf('git push origin "HEAD:$GITHUB_REF_NAME"');
+
+  assert.ok(auth >= 0, 'the state push must configure Git authentication');
+  assert.ok(fetched > auth, 'it must authenticate before fetching');
+  assert.ok(push > fetched, 'it must fetch and rebase before pushing');
+});
+
+// R25: a failed collection run must surface as a red workflow, so the step may
+// not swallow the CLI exit code.
+test('attendance workflow lets a failed collection fail the job', () => {
+  assert.match(attendance, /set -euo pipefail/);
+  assert.doesNotMatch(attendance, /continue-on-error:\s*true/);
+});

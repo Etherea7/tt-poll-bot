@@ -13,6 +13,7 @@
     "format": "biome format --write .",
     "typecheck": "tsc --noEmit",
     "preview": "node src/main.ts --preview",
+    "collect": "node src/collect-main.ts",
     "snapshot:check": "node scripts/check-snapshot.ts",
     "snapshot:refresh": "node scripts/refresh-snapshot.ts"
   },

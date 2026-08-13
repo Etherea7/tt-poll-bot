@@ -45,6 +45,24 @@ function destinationsFrom(env: Record<string, string | undefined>): Destination[
   });
 }
 
+export interface CollectRunConfig {
+  readonly token: string;
+  readonly destinations: readonly Destination[];
+}
+
+/**
+ * Configuration for the collection job. (R1)
+ *
+ * Shares the destination allow-list with the monthly job, so a chat id still
+ * only ever comes from trusted runtime configuration and never from an inbound
+ * Telegram update.
+ */
+export function parseCollectConfig(env: Record<string, string | undefined>): CollectRunConfig {
+  const token = (env.TELEGRAM_BOT_TOKEN ?? '').trim();
+  if (token === '') throw new Error('TELEGRAM_BOT_TOKEN is required for attendance collection');
+  return { token, destinations: destinationsFrom(env) };
+}
+
 function parseArgs(argv: readonly string[]): Record<string, string | true> {
   const valueFlags = new Set(['month', 'only', 'slots', 'claim', 'to']);
   const booleanFlags = new Set(['preview', 'prepare', 'live', 'force', 'offline']);

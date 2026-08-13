@@ -126,3 +126,18 @@ typechecker only and is configured `noEmit`; it must never produce output.
 - Prefer pure functions with no I/O for calendar and poll-building logic; keep
   `fetch` confined to the holiday source and the Telegram client so the rest
   stays trivially testable.
+- **Attendance state lives in `state/attendance.json`** (spec 004): the
+  `getUpdates` offset, poll registrations, votes, display names, and roster
+  message records. It holds personal data, so **the repository must remain
+  private**. Selections are replaced wholesale per `(poll_id, user_id)` and are
+  keyed on `PollOption.persistent_id` — never on positional `option_ids`,
+  because the Saturday poll allows added options and positions shift.
+- **Collection must never be able to deliver a poll.** `src/collect.ts` imports
+  no transport that can create a message and nothing that writes delivery
+  claims; a test asserts that import boundary. Keep it that way.
+- **Never register a Telegram webhook.** `getUpdates` and `setWebhook` are
+  mutually exclusive, and two concurrent `getUpdates` consumers get HTTP 409.
+- A collection run saves each page of updates *before* requesting the next one.
+  Requesting a later offset is what makes Telegram discard the previous page,
+  and unconsumed updates expire after 24 hours, so the reverse order loses votes
+  irrecoverably.
