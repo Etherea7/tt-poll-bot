@@ -139,14 +139,38 @@ at the first unchecked step below.
   `RosterTooLargeError`, and collection attempts each roster independently so
   one unrenderable roster no longer stops other groups updating. Fixed in
   `b51cc6e`.
-- [ ] F10 — T15 independent review via `codex:rescue`. First run returned
-  without findings (it handed off to a background Codex task); resumed and
-  awaiting its output. **Not yet evidence of anything.**
-- [x] F11a — merge integration verified without touching the protected branch:
-  disposable worktree at `main` (447dacf), `git merge --no-ff --no-commit
-  feature/004-attendance-roster` → `Automatic merge went well; stopped before
-  committing as requested`, no conflicts. Gates on the integrated tree:
-  `npm test` 167 passing, `npm run typecheck` exit 0, `npm run lint` exit 0,
+- [x] F10 — T15 independent review. The `codex:rescue` subagent could not
+  deliver: it is barred from the status/result calls its own background task
+  needed, and left two orphaned cloud jobs. Ran `codex exec --sandbox
+  read-only` directly instead, which produced a real review. Nine findings,
+  all confirmed against the code before acting; fixed in `a829e8d`:
+  - **P0 (mine to own):** a page was not durable before a later offset was
+    requested. `saveAttendanceState` writes to the ephemeral runner; the
+    durable copy is the git push after the process exits. Paging acknowledged
+    page 1 while it could still be lost. The comment asserting durability was
+    false. Now one page per run.
+  - **P0:** the two state-writing workflows used different concurrency groups.
+    Collection between poll delivery and the registration push would discard
+    those polls' first votes. Both now share `telegram-state`.
+  - **P1 x3:** partial registration when an option lacked `persistent_id`;
+    `registerPoll` appending instead of superseding, so a forced resend
+    doubled every session; a failed pin being permanent.
+  - **P2 x2:** unregistered poll ids not logged (R7); collisions computed over
+    all voters rather than displayed attendees (R22).
+  - **P3:** two dead projection fields removed.
+  - **Declined with reasoning:** adding the secrets scan to the workflow's
+    automated state commit. Staged content is member display names, so it would
+    fail on ordinary text and block state pushes — losing votes to guard an
+    exotic case. Recorded in the commit message.
+  - Review also flagged four tests as weaker than they looked. The weakest —
+    a regex-on-source check that no run writes to the repo — is deleted and
+    replaced by making `RunDeps.attendancePath` required, so the footgun is
+    gone rather than asserted about.
+- [x] F11a — merge integration verified without touching the protected branch,
+  re-run at `a829e8d` after the review fixes: disposable worktree at `main`
+  (447dacf), `git merge --no-ff --no-commit feature/004-attendance-roster` →
+  clean, no conflicts. Gates on the integrated tree: `npm test` **173 passing /
+  173 tests**, `npm run typecheck` exit 0, `npm run lint` exit 0,
   `npm run snapshot:check` exit 0, secrets scan clean. Merge aborted, worktree
   and branch removed; `main` still at 447dacf.
 - [ ] F11 — merge gate: **blocked by design.** Destination `main` is protected
