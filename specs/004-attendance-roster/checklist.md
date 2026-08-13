@@ -93,19 +93,35 @@ at the first unchecked step below.
 - [x] F0 — isolation created and verified (evidence above).
 - [x] F1 — plan.md and tasks.md written (evidence:
   `specs/004-attendance-roster/plan.md`, `tasks.md`).
-- [ ] F2 — T1/T2 transport: `sendPoll` returns `Message`; `getUpdates`,
-  `editMessageText`, `pinChatMessage` added.
-- [ ] F3 — T3/T4 `src/attendance.ts` state and vote application.
-- [ ] F4 — T5/T6 `src/roster.ts` projection and rendering.
-- [ ] F5 — T7/T8 `src/collect.ts` collection orchestration.
-- [ ] F6 — T9/T10 `src/run.ts` registration and roster delivery.
-- [ ] F7 — T11/T12 collection workflow.
-- [ ] F8 — T13 docs and package script.
-- [ ] F9 — T14 full gates green (`npm test`, `npm run typecheck`,
-  `npm run lint`) and diff reviewed.
-- [ ] F10 — T15 independent review via `codex:rescue`, then commit.
+- [x] F2 — T1/T2 transport. RED: `node --test test/telegram.test.ts` → exit 1,
+  `SyntaxError: The requested module '../src/telegram.ts' does not provide an
+  export named 'editMessageText'`. GREEN: same command → 18/18 pass. Regression
+  `npm test` → 111/111, `npm run typecheck` → exit 0. Commit `5dda297`.
+- [x] F3 — T3/T4 `src/attendance.ts`. RED: `node --test test/attendance.test.ts`
+  → `ERR_MODULE_NOT_FOUND ... src/attendance.ts`. GREEN: 19/19 pass. Commit
+  `5dda297`.
+- [x] F4 — T5/T6 `src/roster.ts`. RED: `ERR_MODULE_NOT_FOUND ... src/roster.ts`.
+  GREEN: `node --test test/roster.test.ts` → 10/10 pass. Commit `5dda297`.
+- [x] F5 — T7/T8 `src/collect.ts`. RED: `ERR_MODULE_NOT_FOUND ...
+  src/collect.ts`. GREEN: `node --test test/collect.test.ts` → 11/11 pass.
+  Commit `6a5af21`.
+- [x] F6 — T9/T10 `src/run.ts` registration and roster delivery. RED:
+  `node --test test/run.test.ts` → 4 new tests failing on behaviour
+  (`actual 0, expected 2` registrations and pins). GREEN: 20/20 pass. Commit
+  `6a5af21`.
+- [x] F7 — T11/T12 collection workflow. RED: `node --test test/workflow.test.ts`
+  → `ENOENT ... .github/workflows/attendance.yml`. GREEN: 8/8 pass. Commit
+  `2090309`.
+- [x] F8 — T13 docs and package script: `docs/USAGE.md` attendance section,
+  `AGENTS.md` constraints, `npm run collect`. Commit `2090309`.
+- [x] F9 — T14 full gates: `npm test` → 163 passing / 0 failing;
+  `npm run typecheck` → exit 0; `npm run lint` → exit 0;
+  `npm run snapshot:check` → exit 0 (104 holidays, covers to 2027-12);
+  offline preview → renders payloads, `preview only — no Telegram request was
+  made.` Secrets scan clean before each of the three commits.
+- [ ] F10 — T15 independent review via `codex:rescue`, then act on findings.
 - [ ] F11 — merge gate: blocked by design; destination `main` is protected and
-  the owner is unavailable.
+  the owner is unavailable. Requires explicit per-merge confirmation.
 
 ## Loop log
 

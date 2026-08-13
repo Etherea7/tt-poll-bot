@@ -217,9 +217,17 @@ export async function run(config: RunConfig, deps: RunDeps): Promise<RunOutcome>
         saveDeliveryRecord(updated, deps.deliveryPath);
         sentKinds.add(poll.kind);
 
-        // R10: the poll id is assigned here and nowhere else.
+        // R10: the poll id is assigned here and nowhere else. Both identifiers
+        // are required — a registration missing either cannot be resolved later
+        // and would fail state validation on the next load, so record nothing
+        // rather than write state that poisons every following run.
         const pollId = sent.poll?.id;
-        if (pollId) {
+        if (!pollId || !Number.isSafeInteger(sent.message_id)) {
+          lines.push(
+            `attendance registration skipped for ${destination.alias}/${poll.kind}: ` +
+              'Telegram returned no poll id or message id',
+          );
+        } else {
           recordAttendance(
             (state) =>
               registerPoll(state, pollId, {
@@ -255,13 +263,25 @@ export async function run(config: RunConfig, deps: RunDeps): Promise<RunOutcome>
       updated = markDelivered(updated, monthKey, destination.alias, ROSTER_KIND, claimId);
       saveDeliveryRecord(updated, deps.deliveryPath);
 
+      // Without a message id nothing can ever edit this roster, and the record
+      // would fail state validation on the next load. The message itself is
+      // already delivered, so report and move on.
+      const messageId = sent.message_id;
+      if (!Number.isSafeInteger(messageId)) {
+        lines.push(
+          `roster for ${destination.alias} returned no message id; ` +
+            'it was posted but cannot be kept up to date',
+        );
+        continue;
+      }
+
       recordAttendance(
         (state) => ({
           ...state,
           rosters: {
             ...state.rosters,
             [rosterKey(destination.alias, monthKey)]: {
-              messageId: sent.message_id,
+              messageId,
               textHash: rosterTextHash(text),
             },
           },

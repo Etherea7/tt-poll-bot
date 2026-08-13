@@ -39,6 +39,9 @@ const deps = (fetchImpl: typeof fetch, deliveryPath: string) => ({
   now: NOW,
   snapshot: SNAPSHOT,
   deliveryPath,
+  // Always isolated: without this the run falls back to the repository's own
+  // state/attendance.json and the suite writes into the working tree.
+  attendancePath: join(mkdtempSync(join(tmpdir(), 'ttatt-')), 'attendance.json'),
   telegram: { fetchImpl },
 });
 
@@ -178,10 +181,12 @@ test('force replaces only a previous claim during prepare', async () => {
   const outcome = await live(path, fetchImpl, [], 'run-2');
   assert.equal(outcome.exitCode, 0);
   assert.equal(calls.filter((call) => call.method === 'sendPoll').length, 8);
-  // Spec 004: a full run also posts and pins one roster per destination.
+  // Spec 004: a full run also posts one roster per destination. This spy
+  // returns no message id, so the roster is correctly not pinned and not
+  // recorded; pinning is asserted where the spy supplies one.
   assert.equal(calls.filter((call) => call.method === 'sendMessage').length, 2);
-  assert.equal(calls.filter((call) => call.method === 'pinChatMessage').length, 2);
-  assert.equal(calls.length, 12);
+  assert.equal(calls.filter((call) => call.method === 'pinChatMessage').length, 0);
+  assert.equal(calls.length, 10);
 });
 
 test('force recovery can target only the inspected destination and kind', async () => {
@@ -442,5 +447,42 @@ test('the roster is pinned without a notification', async () => {
   assert.ok(
     pins.every((pin) => pin.body.disable_notification === true),
     'pinning must never notify',
+  );
+});
+
+// R15, R23: a roster record without a message id is unusable — nothing can
+// edit that message later — and it fails `parseAttendanceState` on the next
+// load, which would then break every subsequent collection run. Telegram
+// always returns a message id on success, so a missing one means something is
+// wrong: record nothing rather than poison the state file.
+test('no roster record is written when Telegram returns no message id', async () => {
+  const deliveryPath = tempPath();
+  const attendancePath = join(dirname(deliveryPath), 'attendance.json');
+  await prepare(deliveryPath);
+  const { fetchImpl, calls } = spyFetch();
+
+  const outcome = await run(
+    parseConfig(env(), ['--live', '--claim', 'run-1']),
+    attendanceDeps(fetchImpl, deliveryPath, attendancePath),
+  );
+
+  assert.equal(outcome.exitCode, 0, 'poll delivery must still succeed');
+  assert.equal(calls.filter((call) => call.method === 'sendPoll').length, 8);
+  assert.deepEqual(loadAttendanceState(attendancePath).rosters, {});
+  assert.equal(
+    calls.filter((call) => call.method === 'pinChatMessage').length,
+    0,
+    'nothing can be pinned without a message id',
+  );
+  assert.ok(outcome.lines.some((line) => /message id/i.test(line)));
+});
+
+// Tests must never write into the repository's own state directory.
+test('a run given no attendance path does not write into the repository', () => {
+  const source = readFileSync('test/run.test.ts', 'utf8');
+  assert.match(
+    source,
+    /attendancePath: join\(mkdtempSync/,
+    'the shared deps helper must supply a temporary attendance path',
   );
 });
