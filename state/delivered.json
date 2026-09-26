@@ -53,6 +53,24 @@
         "status": "delivered",
         "claimId": "36101639567-1"
       }
+    },
+    "main": {
+      "fridays": {
+        "status": "claimed",
+        "claimId": "36260861341-1"
+      },
+      "saturdays": {
+        "status": "claimed",
+        "claimId": "36260861341-1"
+      },
+      "sundays": {
+        "status": "claimed",
+        "claimId": "36260861341-1"
+      },
+      "holidays": {
+        "status": "claimed",
+        "claimId": "36260861341-1"
+      }
     }
   }
 }
