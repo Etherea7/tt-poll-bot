@@ -76,37 +76,37 @@
   "2026-11": {
     "test": {
       "fridays": {
-        "status": "claimed",
+        "status": "delivered",
         "claimId": "40168029324-1"
       },
       "saturdays": {
-        "status": "claimed",
+        "status": "delivered",
         "claimId": "40168029324-1"
       },
       "sundays": {
-        "status": "claimed",
+        "status": "delivered",
         "claimId": "40168029324-1"
       },
       "holidays": {
-        "status": "claimed",
+        "status": "delivered",
         "claimId": "40168029324-1"
       }
     },
     "main": {
       "fridays": {
-        "status": "claimed",
+        "status": "delivered",
         "claimId": "40168029324-1"
       },
       "saturdays": {
-        "status": "claimed",
+        "status": "delivered",
         "claimId": "40168029324-1"
       },
       "sundays": {
-        "status": "claimed",
+        "status": "delivered",
         "claimId": "40168029324-1"
       },
       "holidays": {
-        "status": "claimed",
+        "status": "delivered",
         "claimId": "40168029324-1"
       }
     }
