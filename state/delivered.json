@@ -72,5 +72,43 @@
         "claimId": "36260861341-1"
       }
     }
+  },
+  "2026-11": {
+    "test": {
+      "fridays": {
+        "status": "claimed",
+        "claimId": "40168029324-1"
+      },
+      "saturdays": {
+        "status": "claimed",
+        "claimId": "40168029324-1"
+      },
+      "sundays": {
+        "status": "claimed",
+        "claimId": "40168029324-1"
+      },
+      "holidays": {
+        "status": "claimed",
+        "claimId": "40168029324-1"
+      }
+    },
+    "main": {
+      "fridays": {
+        "status": "claimed",
+        "claimId": "40168029324-1"
+      },
+      "saturdays": {
+        "status": "claimed",
+        "claimId": "40168029324-1"
+      },
+      "sundays": {
+        "status": "claimed",
+        "claimId": "40168029324-1"
+      },
+      "holidays": {
+        "status": "claimed",
+        "claimId": "40168029324-1"
+      }
+    }
   }
 }
